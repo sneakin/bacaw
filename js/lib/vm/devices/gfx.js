@@ -1,0 +1,699 @@
+const Enum = require('enum.js');
+const DataStruct = require('data_struct.js');
+const RangedHash = require('vm/ranged_hash.js');
+const RAM = require('vm/devices/ram.js');
+const util = require('util.js');
+
+function GFX(vm, irq, canvases_for_layers, w, h, mem_size)
+{
+    this.vm = vm;
+    this.mem_size = mem_size;
+    this.input_ram = new RAM(mem_size);
+    this.input_struct = GFX.InputMemory(canvases_for_layers.length, mem_size);
+    this.input_data = this.input_struct.proxy(this.input_ram.data_view());
+    var self = this;
+    this.input_data.addEventListener(function(event) {
+        if(event.detail.view == self.input_data.view) {
+            for(var f in event.detail.fields) {
+                var v = event.detail.fields[f];
+                var m = 'on_' + f;
+                if(self[m]) self[m](v, true);
+            }
+        }
+    });
+    this.layers = util.map_each_n(canvases_for_layers, function(l, n) {
+        return new GFX.Layer(n, l, self.input_data.layers[n].view, w, h);
+    });
+    this.input_data.current_layer = 0;
+    this.input_data.flags = GFX.Flags.SYNC;
+    this.irq = irq;
+    this.next_output_addr = 0;
+    this.timer = null; //[];
+}
+
+const SIZEOF_FLOAT = Float32Array.BYTES_PER_ELEMENT;
+const SIZEOF_SHORT = Uint16Array.BYTES_PER_ELEMENT;
+const SIZEOF_LONG = Uint32Array.BYTES_PER_ELEMENT;
+
+GFX.MAX_LAYERS = 16;
+
+GFX.UnknownCommandError = "Unknown command error";
+
+GFX.Flags = new Enum([
+    'NONE',
+    'SYNC'
+]);
+
+GFX.LayerMemory = new DataStruct([
+    [ 'id', VM.TYPES.BYTE ],
+    [ 'visible', VM.TYPES.BYTE ],
+    [ 'width', VM.TYPES.ULONG ],
+    [ 'height', VM.TYPES.ULONG ],
+    [ 'x', VM.TYPES.FLOAT, 0.0 ],
+    [ 'y', VM.TYPES.FLOAT, 0.0 ],
+    [ 'z', VM.TYPES.LONG, 0 ],
+    [ 'alpha', VM.TYPES.FLOAT, 0.0 ]
+], true);
+
+GFX.InputMemory = function(num_layers, mem_size, stack_size)
+{
+    stack_size = stack_size || 16;
+    
+    return new DataStruct([
+        [ 'flags', VM.TYPES.ULONG ],
+        [ 'last_error', VM.TYPES.ULONG ],
+        [ 'error_offset', VM.TYPES.ULONG ],
+        [ 'result', VM.TYPES.ULONG ],
+        [ 'result_values', 8, VM.TYPES.FLOAT ],
+        [ 'current_layer', VM.TYPES.ULONG ],
+        [ 'layers', num_layers, GFX.LayerMemory ],
+        [ 'swapping', VM.TYPES.ULONG ],
+        [ 'ip', VM.TYPES.ULONG ],
+        [ 'sp', VM.TYPES.ULONG ],
+        [ 'call_stack', stack_size, VM.TYPES.ULONG ],
+        [ 'input', (mem_size - num_layers * GFX.LayerMemory.byte_size - (18 + stack_size) * VM.TYPES.ULONG.byte_size), VM.TYPES.UBYTE ],
+        [ 'swap', VM.TYPES.ULONG ]
+    ]);
+}
+
+GFX.Layer = function(id, canvas, data, w, h, x, y, z, alpha)
+{
+    this.canvas = canvas;
+    this.data = data;
+    var self = this;
+    this.data.addEventListener(function(event) {
+        if(event.detail.view == self.data) {
+            for(var f in event.detail.fields) {
+                var v = event.detail.fields[f];
+                var m = 'on_' + f;
+                if(self[m]) self[m](v, true);
+            }
+        }
+    });
+    this.id(id);
+    this.width(w);
+    this.height(h);
+    this.x(x || 0);
+    this.y(y || 0);
+    this.z(z || 0);
+    this.alpha(alpha || 0.0);
+}
+
+GFX.Layer.FIELDS = {
+    id: function(v) { },
+    visible: function(v) { this.canvas.style.visibility = (v > 0) ? 'visible' : 'hidden'; },
+    width: function(v) { this.canvas.style.width = this.canvas.width = v; },
+    height: function(v) { this.canvas.style.height = this.canvas.height = v; },
+    x: function(v) { this.canvas.style.left = v; },
+    y: function(v) { this.canvas.style.top = v; },
+    z: function(v) { this.canvas.style.zIndex = v; },
+    alpha: function(v) { this.canvas.style.opacity = v; }
+};
+
+GFX.Layer.add_attr = function(name, setter)
+{
+    GFX.Layer.prototype[name] = function(v) {
+        if(v) {
+            this.data[name] = v;
+        }
+        return this.data[name];
+    }
+    GFX.Layer.prototype['on_' + name] = function(v) {
+        setter.call(this, [v]);
+    }
+}
+
+for(var f in GFX.Layer.FIELDS) {
+    GFX.Layer.add_attr(f, GFX.Layer.FIELDS[f]);
+}
+
+GFX.Layer.prototype.get_context = function(type)
+{
+    return this.canvas.getContext(type || '2d');
+}
+
+GFX.Command = function(name, arglist)
+{
+    this.name = name;
+    this.arglist = arglist;
+    this.arity = arglist.length;
+}
+
+GFX.Command.ArgumentError = "ArgumentError";
+
+GFX.Command.prototype.encode_array = function(args, dv)
+{
+    if(args.length != this.arity) {
+        throw GFX.Command.ArgumentError;
+    }
+
+    var bi = 0;
+    for(var i = 0; i < this.arity; i++) {
+        switch(this.arglist[i]) {
+        case 'b':
+            dv.setInt8(bi, args[i]);
+            bi += Int8Array.BYTES_PER_ELEMENT;
+            break;
+        case 'B':
+            dv.setUint8(bi, args[i]);
+            bi += Uint8Array.BYTES_PER_ELEMENT;
+            break;
+        case 'f':
+            dv.setFloat32(bi, args[i], true);
+            bi += Float32Array.BYTES_PER_ELEMENT;
+            break;
+        case 'l':
+            dv.setInt32(bi, args[i], true);
+            bi += Int32Array.BYTES_PER_ELEMENT;
+            break;
+        case 'L':
+            dv.setUint32(bi, args[i], true);
+            bi += Uint32Array.BYTES_PER_ELEMENT;
+            break;
+        default:
+            throw "Unkown arglist specifier";
+        }
+    }
+
+    return bi;
+}
+
+const GFX_COMMANDS = [
+    [ "NOP", "" ],
+    [ "COMPOSITE", "" ],
+    [ "RESET", "" ],
+    [ "CLEAR", "" ],
+    [ "SET_FILL", "BBBB" ],
+    [ "SET_LINE", "BBBB" ],
+    [ "SET_LINE_CAP", "B" ],
+    [ "SET_LINE_JOIN", "B" ],
+    [ "SET_STROKE", "BBBB" ],
+    [ "SET_STROKE_WIDTH", "f" ],
+    [ "SET_LINE_WIDTH", "f" ],
+    [ "SAVE", "" ],
+    [ "RESTORE", "" ],
+    [ "SET_LAYER", "B" ],
+    [ "CALL", "L" ],
+    [ "RET", "" ],
+    [ "BEGIN", "" ],
+    [ "END", "" ],
+    [ "SCALE", "ff" ],
+    [ "ROTATE", "f" ],
+    [ "TRANSLATE", "ff" ],
+    [ "RECT", "ffff" ],
+    [ "FILL_RECT", "ffff" ],
+    [ "MOVE", "ff" ],
+    [ "LINE", "ff" ],
+    [ "CURVE", "ffffff" ],
+    [ "STROKE", "" ],
+    [ "FILL", "" ]
+];
+
+GFX.LINE_CAPS = new Enum([
+    "BUTT",
+    "ROUND",
+    "SQUARE"
+]);
+
+GFX.LINE_JOINS = new Enum([
+    "BEVEL",
+    "ROUND",
+    "MITER"
+]);
+
+GFX.commands = {};
+GFX.commands_by_name = {};
+
+for(var i in GFX_COMMANDS) {
+    var def = GFX_COMMANDS[i];
+    var op = parseInt(i);
+    var cmd = new GFX.Command(def[0], def[1]);
+    GFX.commands[op] = cmd;
+    GFX.commands_by_name[cmd.name] = cmd;
+    GFX["CMD_" + cmd.name] = op;
+}
+
+GFX.StackOverflowError = 'Stack overflow';
+
+GFX.ERRORS = {};
+GFX.ERRORS[GFX.UnknownCommandError] = 1;
+GFX.ERRORS[GFX.Command.ArgumentError] = 2;
+GFX.ERRORS[RangedHash.InvalidAddressError] = 3;
+GFX.ERRORS[GFX.StackOverflowError] = 4;
+
+GFX.prototype.process_drawing_cmd = function()
+{
+    var ip = this.input_data.ip;
+    var inc = 1;
+    var off = this.input_data.ds.fields['input'].offset;
+    var cmd = this.input_data.input[ip];
+
+    if(ip >= this.input_data.input.byteLength) {
+        return false;
+    }
+    
+    //console.log("ip", ip, "cmd", cmd, GFX.commands[cmd], "RAM", this.input_ram.read(ip + off, 16), "SP", this.input_data.sp, "swap", this.input_data.swap, this.input_data.swapping);
+
+    if(this.context == null) {
+        this.context = this.get_context('2d');
+    }
+    
+    switch(cmd) {
+    case GFX.CMD_NOP:
+        break;
+    case GFX.CMD_CLEAR:
+        this.context.clearRect(0, 0, this.get_current_layer().width, this.get_current_layer().height);
+        break;
+    case GFX.CMD_SET_LAYER:
+        this.set_layer(this.input_data.input[ip + 1]);
+        this.context = this.get_context('2d');
+        inc += 1;
+        break;
+    case GFX.CMD_SET_LINE_CAP:
+        this.context.lineCap = GFX.LINE_CAPS[this.input_ram.read(ip + off + 1, 1)[0]].toLowerCase();
+        inc += 1;
+        break;
+    case GFX.CMD_SET_LINE_JOIN:
+        this.context.lineJoin = GFX.LINE_JOINS[this.input_ram.read(ip + off + 1, 1)[0]].toLowerCase();
+        inc += 1;
+        break;
+    case GFX.CMD_SET_FILL:
+        var c = Array.from(this.input_ram.read(ip + off + 1, 4));
+        c[3] = c[3] / 255.0;
+        this.context.fillStyle = 'rgba(' + c.join(',') + ')';
+        inc += 4;
+        break;
+    case GFX.CMD_SET_STROKE:
+        var c = Array.from(this.input_ram.read(ip + off + 1, 4));
+        c[3] = c[3] / 255.0;
+        this.context.strokeStyle = 'rgba(' + c.join(',') + ')';
+        inc += 4;
+        break;            
+    case GFX.CMD_SET_LINE:
+        var c = Array.from(this.input_ram.read(ip + off + 1, 4));
+        c[3] = c[3] / 255.0;
+        this.context.lineStyle = 'rgba(' + c.join(',') + ')';
+        inc += 4;
+        break;
+    case GFX.CMD_SET_LINE_WIDTH:
+        var c = this.input_ram.readf(ip + off + 1, 1);
+        this.context.lineWidth = c[0];
+        inc += VM.TYPES.FLOAT.byte_size;
+        break;
+    case GFX.CMD_SET_STROKE_WIDTH:
+        var c = this.input_ram.readf(ip + off + 1, 1);
+        this.context.strokeWidth = c[0];
+        inc += VM.TYPES.FLOAT.byte_size;
+        break;
+    case GFX.CMD_SAVE:
+        this.context.save();
+        break;
+    case GFX.CMD_RESTORE:
+        this.context.restore();
+        break;
+    case GFX.CMD_BEGIN:
+        this.context.beginPath();
+        break;
+    case GFX.CMD_END:
+        this.context.closePath();
+        break;
+    case GFX.CMD_SCALE:
+        var scale = this.input_ram.readf(ip + off + 1, 2);
+        this.context.scale(scale[0], scale[1]);
+        inc += VM.TYPES.FLOAT.byte_size * 2;
+        break;
+    case GFX.CMD_TRANSLATE:
+        var dx = this.input_ram.readf(ip + off + 1, 2);
+        this.context.translate(dx[0], dx[1]);
+        inc += VM.TYPES.FLOAT.byte_size * 2;
+        break;
+    case GFX.CMD_ROTATE:
+        var dx = this.input_ram.readf(ip + off + 1, 1);
+        this.context.rotate(dx[0]);
+        inc += VM.TYPES.FLOAT.byte_size;
+        break;
+    case GFX.CMD_FILL_RECT:
+        var x = this.input_ram.readf(ip + off + 1, 4);
+        this.context.fillRect(x[0], x[1], x[2], x[3]);
+        inc += VM.TYPES.FLOAT.byte_size * 4;
+        break;
+    case GFX.CMD_RECT:
+        var x = this.input_ram.readf(ip + off + 1, 4);
+        this.context.rect(x[0], x[1], x[2], x[3]);
+        inc += VM.TYPES.FLOAT.byte_size * 4;
+        break;
+    case GFX.CMD_MOVE:
+        var x = this.input_ram.readf(ip + off + 1, 2);
+        this.context.moveTo(x[0], x[1]);
+        inc += VM.TYPES.FLOAT.byte_size * 2;
+        break;
+    case GFX.CMD_LINE:
+        var x = this.input_ram.readf(ip + off + 1, 2);
+        this.context.lineTo(x[0], x[1]);
+        inc += VM.TYPES.FLOAT.byte_size * 2;
+        break;
+    case GFX.CMD_CURVE:
+        var x = this.input_ram.readf(ip + off + 1, 6);
+        this.context.bezierCurveTo(x[0], x[1], x[2], x[3], x[4], x[5]);
+        inc += VM.TYPES.FLOAT.byte_size * 6;
+        break;
+    case GFX.CMD_STROKE:
+        this.context.stroke();
+        break;
+    case GFX.CMD_FILL:
+        this.context.fill();
+        break;
+    case GFX.CMD_CALL:
+        inc += VM.TYPES.LONG.byte_size;
+        this.input_data.ip += inc;
+        this.call(this.input_ram.readL(ip + off + 1, 1)[0]);
+        break;
+    case GFX.CMD_RET:
+        if(!this.call_return()) {
+            return false;
+        }
+        break;
+    default:
+        this.write_error(GFX.UnknownCommandError, cmd);
+        break;
+    }
+
+    if(cmd != GFX.CMD_CALL && cmd != GFX.CMD_RET) {
+        this.input_data.ip += inc;
+    }
+    
+    return true;
+}
+
+GFX.prototype.call = function(new_ip)
+{
+    if(this.input_data.sp < this.input_data.call_stack.length) {
+        this.input_data.call_stack[this.input_data.sp++] = this.input_data.ip;
+        this.input_data.ip = new_ip;
+    } else {
+        this.write_error(GFX.StackOverflowError, this.input_data.ip);
+    }
+}
+
+GFX.prototype.call_return = function()
+{
+    if(this.input_data.sp > 0) {
+        this.input_data.ip = this.input_data.call_stack[--this.input_data.sp];
+        return true;
+    } else {
+        this.stop_exec();
+        return false;
+    }
+}
+
+GFX.prototype.swap_buffers = function()
+{
+    if(this.input_data.swapping == 0) {
+        if(this.input_data.swap != 0) {
+            this.input_data.ip = this.input_data.swap - 1;
+            this.input_data.swapping = this.input_data.ip;
+            if(this.input_data.flags & GFX.Flags.SYNC) {
+                this.request_animation();
+            } else {
+                this.run_anim();
+            }                
+            return false;
+        }
+    }
+    
+    return this;
+}
+
+GFX.prototype.request_animation = function()
+{
+    if(this.timer == null) {
+        this.raf = null;
+        var self = this;
+        this.timer = window.requestAnimationFrame(function(dt) {
+            self.run_anim(dt);
+        });
+    } else {
+        this.raf = true;
+    }
+}
+
+GFX.prototype.stop = function()
+{
+    if(this.timer) {
+        window.cancelAnimationFrame(this.timer);
+        this.timer = null;
+        this.raf = null;
+    }
+    // if(this.timer.length > 0) {
+    //     map_each(this.timer, function(t) {
+    //         window.cancelAnimationFrame(t);
+    //     });
+    //     this.timer = [];
+    // }
+}
+
+GFX.prototype.stop_exec = function()
+{
+    this.input_data.ip = -1;
+    this.input_data.swapping = 0;
+    this.input_data.swap = 0;
+
+    return this;
+}
+
+GFX.prototype.run_anim = function(dt)
+{
+    this.timer = null;
+    if(this.raf) {
+        this.request_animation();
+    }
+    
+    var r;
+    do {
+        r = this.step_anim();
+    } while(r != false);
+}
+
+GFX.prototype.step = function()
+{
+    //return this.step_anim();
+}
+
+GFX.prototype.trigger_interrupt = function()
+{
+    if(this.vm) this.vm.interrupt(this.irq);
+}
+
+GFX.prototype.step_anim = function()
+{
+    if(this.swap_buffers()) {
+        if(this.input_data.swapping != 0) {
+            try {
+                if(this.process_drawing_cmd() != false) {
+                    return this;
+                }
+            } catch(err) {
+                this.write_error(err, i);
+            }
+
+            this.stop_exec();
+            this.trigger_interrupt();
+        }
+    }
+
+    return false;
+}
+
+GFX.prototype.debug_dump = function()
+{
+    console.log("GFX", "layer", this.input_data.current_layer, "IP", this.input_data.ip, "SP", this.input_data.sp, "Swap", this.input_data.swap, this.input_data.swapping);
+    return this;
+}
+
+GFX.BadLayerError = "Bad Layer";
+
+GFX.prototype.set_layer = function(n)
+{
+    if(n < 0 || n >= this.layers.length) throw GFX.BadLayerError; 
+    this.input_data.current_layer = n;
+    return this;
+}
+
+GFX.prototype.get_context = function(type)
+{
+    return this.layers[this.input_data.current_layer].get_context(type);
+}
+
+GFX.prototype.get_current_layer = function()
+{
+    return this.layers[this.input_data.current_layer];
+}
+
+GFX.prototype.ram_size = function()
+{
+    return this.input_struct.byte_size;
+}
+
+GFX.prototype.read = function(addr, count, output, offset)
+{
+    return this.input_ram.read(addr, count, output, offset);
+}
+
+GFX.prototype.write = function(addr, data)
+{
+    var n = this.input_ram.write(addr, data);
+
+    this.swap_buffers();
+    return n;
+}
+
+GFX.prototype.write_error = function(err, offset)
+{
+    var e = GFX.ERRORS[err];
+    if(e) {
+        this.input_data.last_error = err;
+        this.input_data.error_offset = offset;
+    } else {
+        throw(err);
+    }
+}
+
+GFX.prototype.writef = function(addr, v)
+{
+    var a = new Uint8Array(Float32Array.BYTES_PER_ELEMENT);
+    var dv = new DataView(a.buffer, a.byteOffset);
+    VM.TYPES.FLOAT.set(dv, 0, v);
+    this.write(addr, a);
+    return this;
+}
+
+GFX.prototype.write_resultf = function(result, a, b, c)
+{
+    this.input_data.result = result;
+    this.input_data.result_values[0] = a;
+    this.input_data.result_values[1] = b;
+    this.input_data.result_values[2] = c;
+    return this;
+}
+
+GFX.prototype.write_resultb = function(result, a, b, c)
+{
+    // todo actually write bytes or floats?
+    this.input_data.result = result;
+    this.input_data.result_values[0] = a;
+    this.input_data.result_values[1] = b;
+    this.input_data.result_values[2] = c;
+    return this;
+}
+
+GFX.prototype.write_array = function(addr, arr) {
+    return this.write(addr, GFX.encode_array(arr));
+}
+
+GFX.encode_array = function(arr, bytes) {
+    if(!bytes) bytes = new Uint8Array(arr.length * VM.TYPES.LONG.byte_size);
+
+    var bi = 0;
+    for(var i = 0; i < arr.length; i++) {
+        var cmd = GFX.commands[arr[i]];
+        if(cmd == null) throw "Undefined: " + arr + " " + i;
+        bytes[bi] = arr[i];
+        bi += 1;
+        bi += cmd.encode_array(arr.slice(i + 1, i + 1 + cmd.arity), new DataView(bytes.buffer, bytes.byteOffset + bi));
+        i += cmd.arity;
+    }
+
+    return bytes.subarray(0, bi);
+}
+
+function gfx_test_cmds(r, g, b)
+{
+    return [
+        GFX.CMD_CLEAR,
+        GFX.CMD_SET_LINE_CAP, GFX.LINE_CAPS.ROUND,
+        GFX.CMD_SET_FILL, r, g, b, 255,
+        GFX.CMD_FILL_RECT, 0, 0, 640, 480,
+        GFX.CMD_SET_STROKE, 0, 255, 0, 255,
+        GFX.CMD_SET_LINE, 255, 0, 0, 255,
+        GFX.CMD_SET_LINE_WIDTH, 5,
+        GFX.CMD_BEGIN,
+        GFX.CMD_MOVE, 0, 0,
+        GFX.CMD_LINE, 320, 240,
+        GFX.CMD_LINE, 320, 0,
+        GFX.CMD_STROKE,
+        GFX.CMD_BEGIN,
+        GFX.CMD_MOVE, 100, 0,
+        GFX.CMD_SET_STROKE, 0, 0, 255, 128,
+        GFX.CMD_SET_LINE_WIDTH, 10,
+        GFX.CMD_LINE, 480, 320,
+        GFX.CMD_CURVE, 0, 480, 0, 0, 640, 480,
+        GFX.CMD_STROKE,
+        GFX.CMD_RET
+    ];
+}
+
+GFX.video_test_layers = function(video, target, cycles)
+{
+    var set_layer = [
+        GFX.CMD_CLEAR,
+        GFX.CMD_SET_LAYER, target,
+        GFX.CMD_SCALE, 0.5, 0.5,
+    ];
+
+    video.input_data.layers[target].z = 1;
+    video.input_data.layers[target].x = 640 * 0.25;
+    video.input_data.layers[target].y = 480 * 0.25;
+    video.input_data.layers[target].width = 320;
+    video.input_data.layers[target].height = 240;
+    video.input_data.layers[target].alpha = 0.5;
+    video.write_array(video.input_data.ds.fields['input'].offset, set_layer.concat(gfx_test_cmds(255, 0, 0)));
+    video.input_data.swap = 1;
+    //video.writef(GFX.INPUT_LAYERS + GFX.INPUT_LAYER_ALPHA, 0.5);
+
+    if(!cycles) cycles = 100;
+    n_times(cycles, function(n) {
+        video.step();
+    });
+}
+
+GFX.video_test = function(canvas, cycles)
+{
+    if(canvas.constructor != Array) canvas = [ canvas ];
+    var video = new GFX(null, 8, canvas, 640, 480, 4096);
+
+    // todo stored drawings: bitmap, offscreen canvas
+    // todo every device needs a step: rename VM to CPU and have a VM to step everything
+    // todo pixel access?
+    // todo canvas resizing events
+    var cmd_arr = GFX.encode_array(gfx_test_cmds(0, 0, 128));
+    video.write(video.input_data.ds.fields['input'].offset, cmd_arr);
+    //video.write_array(video.input_data.ds.fields['input'].offset, gfx_test_cmds(0, 0, 128));
+    video.input_data.swap = 1;
+    //video.write(video.input_data.swap, [ cycles || 200 ]);
+
+    do {
+        video.step();
+    } while(video.input_data.swapping != 0);
+    
+    var call_cmds = [
+        GFX.CMD_SAVE,
+        GFX.CMD_TRANSLATE, 10.0, 0.0,
+        GFX.CMD_CALL, 32,
+        GFX.CMD_ROTATE, Math.PI / 8.0,
+        GFX.CMD_CALL, 32,
+        GFX.CMD_ROTATE, Math.PI / 8.0,
+        GFX.CMD_CALL, 32,
+        GFX.CMD_RESTORE,
+        GFX.CMD_RET
+    ];
+    console.log(cmd_arr.byteLength);
+    var off = video.input_data.ds.fields['input'].offset + cmd_arr.byteLength;
+    video.write(off, GFX.encode_array(call_cmds));
+    video.input_data.swap = cmd_arr.byteLength + 1;
+    
+    return video;
+}
+
+if(typeof(module) != 'undefined') {
+	module.exports = GFX;
+}

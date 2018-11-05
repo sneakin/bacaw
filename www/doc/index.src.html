@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<html>
+	<head>
+    <meta charset="UTF-8" /> 
+    <style>@import "../style.css";</style>
+    <script src="doc.js" type="text/javascript"></script>
+  </head>
+  <body onload="doc_index_onload();">
+    <h1>Registers</h1>
+    <p>
+      There are $(VM.CPU.REGISTER_COUNT) registers.
+      Each register is $(VM.CPU.REGISTER_SIZE*8) bits.
+      They are generic registers used to store integers, floating point numbers, and pointers.
+      Only STATUS and INS are treated as special flags to some instructions.
+    </p>
+    <div id="register-docs">
+      To be replaced.
+    </div>
+    <h1>Instruction Set</h1>
+    <p>
+      The instruction set is $(VM.CPU.INSTRUCTION_SIZE*8) bit, little endian: the lowest byte comes first.
+      It is designed to be somewhat usable without an assembler.
+      Some instructions are followed by a register sized value.
+    </p>
+    <div id="instruction-docs">
+      To be replaced.
+    </div>
+  </body>
+</html>

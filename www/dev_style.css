@@ -1,0 +1,21 @@
+.vm-display {
+    float: left;
+}
+
+.info {
+    float: left;
+    display: block;
+}
+
+.cpu-info {
+    display: block;
+}
+
+.horiz-bar > * {
+    float: left;
+}
+
+.horiz-bar > BR {
+    float: none;
+    clear: both;
+}
