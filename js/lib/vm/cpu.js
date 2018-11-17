@@ -2185,6 +2185,7 @@ VM.MemoryFaultError = "Memory fault error";
 
 VM.CPU.prototype.run = function(cycles)
 {
+    if(this.debug) console.log("CPU run", cycles);
     var i = 0;
     this.halted = false;
     this.keep_running = true;

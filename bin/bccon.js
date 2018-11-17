@@ -1,6 +1,8 @@
 #!/bin/env node
 // -*- mode: JavaScript; coding: utf-8-unix -*-
 
+var vm_debugging = process.env['DEBUG'] == '1';
+
 const LOAD_OFFSET = 1024;
 
 require('vm');
@@ -19,7 +21,7 @@ function vm_init(ram_size)
     mmu.map_memory(0x0, ram_size, new RAM(ram_size));
 
     var devcon = new DevConsole();
-    mmu.map_memory(0xF0001000, devcon.ram_size(), devcon);
+    mmu.map_memory(0xF0000800, devcon.ram_size(), devcon);
 
     var output_irq = VM.CPU.INTERRUPTS.user;
     var output = new OutputStream(process.stdout, null, cpu, output_irq);
@@ -63,7 +65,7 @@ if(typeof(module) != 'undefined') {
 
 const fs = require('fs');
 
-console.log("Initializing...");
+if(vm_debugging) console.log("Initializing...");
 //const fs = require('fs');
 
 var vm = vm_init();
@@ -73,19 +75,71 @@ var steps = parseInt(args[3]);
 if(isNaN(steps) || steps <= 0) steps = null;
 else console.log("Stepping for " + steps);
 
+var interval;
+//var steps_per_sec = 1000000;
+//var steps_per_sec = 10;
+//var steps_per_ms = steps_per_sec * 1000;;
+var initial_steps_per_ms = 10000;
+var target_steps_per_ms = 1000;
+var start_time = Date.now();
+var sleep_delay = 1000; //ms
+
+if(vm_debugging) {
+  vm.each_device(function(dev) {
+    dev.debug = true;
+  });
+}
+
+function main_loop(vm, steps, max_steps)
+{
+  var t = Date.now();
+  if(vm_debugging) console.log("Tick", t, vm.cpu.cycles, vm.cpu.stepping, steps, max_steps);
+  if(!steps || Math.abs(steps) > initial_steps_per_ms) steps = initial_steps_per_ms;
+
+  if(!vm.cpu.stepping) {
+    if(max_steps) {
+			vm.dbstep(steps);
+    } else {
+      vm.run(steps);
+    }
+  }
+
+  if(vm.cpu.running
+     && !vm.cpu.halted
+     && (max_steps == null || vm.cpu.cycles < max_steps)) {
+    var delay = 1;
+    if((vm.cpu.regread('status') & VM.CPU.STATUS.SLEEP) != 0) delay = sleep_delay;
+
+    if(vm_debugging) {
+      var dt = Date.now() - t;
+      var num_steps_dt = steps / dt;
+      console.log("Ticking: ", steps, "target steps/ms", vm.cpu.cycles, "cycles", dt, "ms", num_steps_dt, "steps/ms", delay, "ms delay");
+    }
+
+    interval = setInterval(function() { main_loop(vm, steps, max_steps); }, delay);
+  } else {
+    if(vm_debugging) {
+      var t = (Date.now() - start_time);
+      console.log("" + vm.cpu.cycles + " steps in " + t + "ms");
+    }
+    process.exit(vm.cpu.regread(0));
+  }
+}
+
 if(path != null) {
-    console.log("Loading " + path);
+  if(vm_debugging) console.log("Loading " + path);
 		fs.readFile(path, function(err, data) {
 			  if(err) throw err;
 			  vm.cpu.memwrite(0, data);
-        console.log("Wrote " + data.length + " bytes to memory");
-        if(steps) {
-			      vm.dbstep(steps);
-        } else {
-            vm.run();
+        if(vm_debugging) {
+          console.log("Wrote " + data.length + " bytes to memory");
         }
 
-        //process.exit(0);
+        main_loop(vm, initial_steps_per_ms, steps);
+
+      //if((vm.cpu.regread('status') & VM.CPU.STATUS.SLEEP) == 0) {
+      //process.exit(0);
+      //}
 		});
 } else {
   const Forth = require("forth");

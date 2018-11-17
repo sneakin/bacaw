@@ -9,8 +9,12 @@ const Timer = require('vm/devices/timer.js');
 var vm, cpu, keyboard;
 var main_window, second_window;
 
-function runner_init(width, height, load_offset)
+function runner_init(width, height, load_offset, mem_size)
 {
+  if(mem_size == null) {
+    mem_size = 8 * 1024 * 1024;
+  }
+  
     if(width == null) {
         width = window.innerWidth;
     }
@@ -33,8 +37,8 @@ function runner_init(width, height, load_offset)
   	//cpu = new VM.CPU(mmu, 1<<16);
     mmu.map_memory(0, 0x2, new RAM(0x2));
     //  mmu.map_memory(0x2, 0x10000, new RAM(0x10000 - 0x2));
-	  cpu = new VM.CPU(mmu, 1024 * 1024);
-    mmu.map_memory(0x2, 1024 * 1024, new RAM(1024 * 1024 - 0x2));
+	  cpu = new VM.CPU(mmu, mem_size);
+    mmu.map_memory(0x2, mem_size - 2, new RAM(mem_size - 0x2));
 
     var keyboard_irq = VM.CPU.INTERRUPTS.user;
     var keyboard_addr = 0xF0000000;
