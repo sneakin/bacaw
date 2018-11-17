@@ -9,6 +9,12 @@ function RAM(amount)
     }
 }
 
+RAM.prototype.set_data = function(arr)
+{
+  this._data = arr;
+  this.length = arr.length;
+}
+
 RAM.prototype.data_view = function(offset)
 {
     return new DataView(this._data.buffer, this._data.byteOffset + (offset || 0));
@@ -91,6 +97,15 @@ for(var i = 0; i < RAM_TYPE_ACCESSORS.length; i++) {
 
     x(a[0], a[1]);
 }
+
+if((typeof(window) != 'undefined' && !window['VM']) ||
+   (typeof(global) != 'undefined' && !global['VM'])) {
+  VM = {};
+}
+if(typeof(VM.Devices) == 'undefined') {
+  VM.Devices = {};
+}
+VM.Devices.RAM = RAM;
 
 if(typeof(module) != 'undefined') {
   module.exports = RAM;

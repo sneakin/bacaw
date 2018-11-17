@@ -25,6 +25,11 @@ function InputStream(stream, mem_size, vm, irq)
     this.stream.pause();
 
     var self = this;
+    this.stream.on('close', function() {
+      self.data.eos = 1;
+      self.trigger_interrupt();
+    });
+  
     this.stream.on('readable', function() {
       if(self.data.ready == 0) {
         self.read_more();
@@ -33,28 +38,31 @@ function InputStream(stream, mem_size, vm, irq)
   }
 }
 
+InputStream.prototype.trigger_interrupt = function()
+{
+  if(this.irq) {
+    this.vm.interrupt(this.irq);
+  }
+}
+
 InputStream.prototype.read_more = function()
 {
   var data = process.stdin.read(this.data.buffer.length);
+  if(this.debug) {
+    console.log("InputStream", this.data.eos, this.data.ready, "Read ", data);
+  }
 
   if(data == null) {
     this.data.ready = 0;
-    this.data.eos = 1;
   } else {
     for(var i = 0; i < data.length; i++) {
       this.data.buffer[i] = data[i];
     }
 
     this.data.ready = data.length;
-    if(data.length < this.data.buffer.length) {
-      this.data.eos = 1;
-    } else {
-      this.data.eos = 0;
-    }
-    
-    if(this.irq) {
-      this.vm.interrupt(this.irq);
-    }
+    this.data.eos = 0;
+
+    this.trigger_interrupt();
   }
 }
 
