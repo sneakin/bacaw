@@ -1,19 +1,26 @@
 const util = require('util.js');
 
-function DataStruct(fields, little_endian)
+function DataStruct(fields, little_endian, alignment)
 {
     this.fields = new Map();
     this.num_fields = 0;
     this.endianess = little_endian || true;
+    this.alignment = alignment || 1;
     var offset = 0;
     for(var n in fields) {
         var f = new DataStruct.Field(fields[n], n, offset);
-        offset += f.byte_size;
+      offset += f.byte_size;
+      offset = this.align(offset);
         this.fields[f.name] = f;
         this.fields[n] = f;
         this.num_fields++;
     }
     this.byte_size = offset;
+}
+
+DataStruct.prototype.align = function(bytes)
+{
+  return Math.ceil(bytes / this.alignment) * this.alignment;
 }
 
 DataStruct.prototype.field_at_offset = function(offset)
