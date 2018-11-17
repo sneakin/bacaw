@@ -18,6 +18,8 @@ VM.CPU = function(mmu, stack_start, max_cycles)
     this._pending_interrupts = [];
     this.keep_running = false;
     this.halted = false;
+    this.stepping = false;
+    this.running = false;
     this.max_cycles = max_cycles;
 	  this.reset();
 }
@@ -559,7 +561,7 @@ function math_ops(suffix)
             
             // causes an unknown op interrupt for floats
             if(type == VM.TYPES.FLOAT) {
-              assert.equal(vm._pending_interrupts.length, 1, 'has a reset interrupt');
+              assert.equal(vm._pending_interrupts.length, 0, 'has a no pending interrupt');
               vm._pending_interrupts = [];
               vm.keep_running = true; // step() doesn't enable this like run()
 	            vm.memwritel(0, vm.encode({op: ins, x: 1}));
@@ -1120,7 +1122,7 @@ VM.CPU.INS_DEFS = [
             assert.assert((vm.regread('status') & VM.CPU.STATUS.CARRY) == 0, 'does not set the carry bit');
         }
       ],
-      [ "MEMCPY", "Copies count bytes starting from X to Y." ],
+      [],
       [ "INT", "Cause an interrupt.",
         [ [ 'x', [ 0xFF00, 8  ] ]
         ],
@@ -1128,7 +1130,7 @@ VM.CPU.INS_DEFS = [
             vm.interrupt(ins.x);
         },
         function(vm, ins) {
-            assert.equal(vm._pending_interrupts.length, 1, 'has a reset interrupt');
+            assert.equal(vm._pending_interrupts.length, 0, 'has no pending interrupts');
             vm._pending_interrupts = [];
             vm.keep_running = true; // step() doesn't enable this like run()
 	          vm.memwritel(0, vm.encode({op: VM.CPU.INS.INT, x: 12}));
@@ -1140,20 +1142,25 @@ VM.CPU.INS_DEFS = [
 	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'has yet to set the INTR status flag');
             assert.assert(vm.memreadl(vm.regread('sp')) != 4, 'has yet to push IP');
             assert.assert(vm.regread('ip') == VM.CPU.INSTRUCTION_SIZE, 'has yet to change IP');
-            assert.equal(vm._pending_interrupts.length, 1, 'is pending');
 
             // interrupts are disabled, so nothing happens
             vm.step();
 	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'interrupts disabled');
+            assert.equal(vm._pending_interrupts.length, 0, 'is not pending');
             assert.assert(vm.regread('sp') == 0x10, 'did not push IP: ' + vm.memreadl(vm.regread('sp')));
 
             // enable interrupts
             vm.enable_interrupts();
+	          vm.regwrite('ip', 0);
+            vm.step();
 	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) != 0, 'interrupts enabled');
+            assert.equal(vm._pending_interrupts.length, 1, 'is pending');
+
             vm.step();
 	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'disables interrupts');
             assert.assert(vm.regread('sp') == 0x10 - 8, 'pushed IP: ' + vm.memreadl(vm.regread('sp')));
             assert.assert(vm.regread('ip') == 0x100 + 12 * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE, 'sets IP to 0x100 + 12*ISR_BYTE_SIZE: ' + vm.regread('ip').toString(16));
+            assert.equal(vm._pending_interrupts.length, 0, 'is no longer pending');
         }
       ],
       [ "HALT", "Halts the CPU.", [],
@@ -1292,7 +1299,47 @@ VM.CPU.INS_DEFS = [
             assert.assert((vm.regread('status') & ins.bits) == 0, 'clears the bits');
         }
       ],
-      [ "MEMSET", "Sets count bytes from the address in X to the value in Y." ]
+      [ "INTR", "Cause an interrupt with the register providing the interrupt number.",
+        [ [ 'x', [ 0x0F00, 8  ] ]
+        ],
+        function(vm, ins) {
+            vm.interrupt(vm.regread(ins.x));
+        },
+        function(vm, ins) {
+            assert.equal(vm._pending_interrupts.length, 0, 'has no pending interrupts');
+            vm._pending_interrupts = [];
+            vm.keep_running = true; // step() doesn't enable this like run()
+	          vm.memwritel(0, vm.encode({op: VM.CPU.INS.INTR, x: 3}));
+	          vm.memwritel(VM.CPU.REGISTER_SIZE, vm.encode({op: VM.CPU.INS.NOP}));
+            vm.regwrite(3, 12);
+	          vm.regwrite('ip', 0);
+            vm.regwrite('sp', 0x10);
+            vm.regwrite('isr', 0x100);
+	          vm.step();
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'has yet to set the INTR status flag');
+            assert.assert(vm.memreadl(vm.regread('sp')) != 4, 'has yet to push IP');
+            assert.assert(vm.regread('ip') == VM.CPU.INSTRUCTION_SIZE, 'has yet to change IP');
+
+            // interrupts are disabled, so nothing happens
+            vm.step();
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'interrupts disabled');
+            assert.equal(vm._pending_interrupts.length, 0, 'is not pending');
+            assert.assert(vm.regread('sp') == 0x10, 'did not push IP: ' + vm.memreadl(vm.regread('sp')));
+
+            // enable interrupts
+            vm.enable_interrupts();
+	          vm.regwrite('ip', 0);
+            vm.step();
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) != 0, 'interrupts enabled');
+            assert.equal(vm._pending_interrupts.length, 1, 'is pending');
+
+            vm.step();
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'disables interrupts');
+            assert.assert(vm.regread('sp') == 0x10 - 8, 'pushed IP: ' + vm.memreadl(vm.regread('sp')));
+            assert.assert(vm.regread('ip') == 0x100 + 12 * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE, 'sets IP to 0x100 + 12*ISR_BYTE_SIZE: ' + vm.regread('ip').toString(16));
+            assert.equal(vm._pending_interrupts.length, 0, 'is no longer pending');
+        }
+      ]
     ],
     // 0x1
     [ "INC", "Increment X by OFFSET which is the 32 bits following the instruction. OFFSET is treated as a literal value (kind=0), relative address (kind=3), or an indirect relative address (kind=6). IP is advanced past OFFSET.",
@@ -1567,7 +1614,7 @@ VM.CPU.INS_DEFS = [
                 vm.memwritel(0, vm.encode({op: ins}));
                 vm.regwrite('isr', 0x100);
                 vm.step();
-                assert.equal(vm.interrupts_pending(), 2, 'queues an interrupt');
+                assert.equal(vm.interrupts_pending(), 0, 'does not queue an interrupt');
             },
             // interrupts enabled
             function(vm, ins) {
@@ -1589,7 +1636,7 @@ VM.CPU.INS_DEFS = [
       [],
       [],
       [],
-      [],
+      [ "MEMSET", "Sets count bytes from the address in X to the value in Y." ],
       [ "CALL", "Push IP + " + VM.CPU.REGISTER_SIZE + ", and then set IP to the OFFSET following the instruction. When REG is not STATUS or INS, that register's value is added to OFFSET.",
         [ [ 'condition', [ 0xF00, 8 ] ],
           [ 'reg', [ 0xF000, 12 ] ]
@@ -1656,6 +1703,7 @@ VM.CPU.INS_DEFS = [
       ],
       [ "SLEEP", "Sleeps the CPU.", [],
         function(vm, ins) {
+          if(vm.debug) console.log("SLEEP", vm.regread('status') & VM.CPU.STATUS.SLEEP);
             vm.set_status(VM.CPU.STATUS.SLEEP);
             return true;
         },
@@ -1683,8 +1731,47 @@ VM.CPU.INS_DEFS = [
         }
       ],
       [],
-      [],
-      []      
+      [ "MEMCPY", "Copies count bytes starting from X to Y." ],
+      [ "CALLR", "Push IP + " + VM.CPU.REGISTER_SIZE + ", and then set IP to the register REG + value of the OFFSET register. When REG is not STATUS or INS, that register's value is added to OFFSET. STATUS and INS are treated as zeros.",
+        [ [ 'offset', [ 0xF000, 12 ] ],
+          [ 'reg', [ 0xF00, 8 ] ]
+        ],
+        function(vm, ins) {
+          var ip = vm.regread('ip');
+          var offset = vm.regread(ins.offset);
+          if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
+            offset = vm.regread(ins.reg) + offset;
+          }
+
+          vm.push('ip');
+          vm.regwrite('ip', offset);
+        },
+        [
+            function(vm, ins) {
+                vm.regwrite('sp', 0x100);
+                vm.memwrite(0x90, new Array(0x20));
+                vm.set_status(VM.CPU.STATUS.NEGATIVE);
+                vm.memwritel(0, vm.encode({op: ins, reg: VM.CPU.REGISTERS.STATUS, offset: 0}));
+                vm.regwrite(0, 0x80);
+                vm.memwritel(0x80, 0x40);
+                vm.step();
+                assert.equal(vm.regread('ip'), 0x80, 'sets IP to offset');
+                assert.equal(vm.memreadL(vm.regread('sp') + 0), VM.CPU.INSTRUCTION_SIZE, 'pushed IP');
+            },
+            function(vm, ins) {
+                vm.regwrite('sp', 0x100);
+                vm.memwrite(0x90, new Array(0x20));
+                vm.set_status(VM.CPU.STATUS.NEGATIVE);
+                vm.memwritel(0, vm.encode({op: ins, reg: 1, offset: 2}));
+                vm.regwrite(1, 0x80);
+                vm.regwrite(2, 0x10);
+                vm.memwritel(0x10, 0x40);
+                vm.step();
+                assert.equal(vm.regread('ip'), 0x80 + 0x90, 'sets IP to reg + offset');
+                assert.equal(vm.memreadL(vm.regread('sp') + 0), VM.CPU.INSTRUCTION_SIZE, 'pushed IP');
+            }
+        ]
+      ]
     ],
     // 0x8
     [ "MOV", "Transfer the value in X to DEST.",
@@ -2161,7 +2248,10 @@ VM.CPU.prototype.unknown_op = function(ins, ip)
 
 VM.CPU.prototype.step = function()
 {
-    try {
+  try {
+        this.running = true;
+        this.stepping = true;
+    
         this.cycles++;
         var ip = this.regread('ip');
 	      var ins = this.memreadS(ip);
@@ -2172,7 +2262,8 @@ VM.CPU.prototype.step = function()
 
             var i = this.decode(ins);
             if(i) {
-                if(i.call(this, ins) == true) {
+              if(i.call(this, ins) == true) {
+                    this.stepping = false;
                     return false;
                 }
             } else {
@@ -2180,6 +2271,7 @@ VM.CPU.prototype.step = function()
             }
         }
     } catch(e) {
+        this.stepping = false;
         if(e == DispatchTable.UnknownKeyError) {
             this.unknown_op(ins, ip);
         } else if(e instanceof RangedHash.InvalidAddressError) {
@@ -2191,6 +2283,7 @@ VM.CPU.prototype.step = function()
         }
     }
     
+    this.stepping = false;
 	  return this;
 }
 
@@ -2383,14 +2476,27 @@ VM.CPU.prototype.check_condition = function(bits)
 
 VM.CPU.prototype.interrupt = function(interrupt)
 {
-  console.log("Interrupt", interrupt, VM.CPU.INTERRUPTS[interrupt], this.regread('status') & VM.CPU.STATUS.SLEEP, this.regread('ip'));
+  if(this.debug) {
+    console.log("Interrupt", interrupt, VM.CPU.INTERRUPTS[interrupt],
+                this.regread('status') & VM.CPU.STATUS.SLEEP,
+                this.regread('status') & VM.CPU.STATUS.INTR,
+                this.regread('ip'),
+                this.regread('sp'),
+                Date.now());
+    this.debug_dump();
+  }
+  
+  if((this.regread('status') & VM.CPU.STATUS.INTR) != 0) {
     this._pending_interrupts.push(interrupt);
     if((this.regread('status') & VM.CPU.STATUS.SLEEP) != 0) {
-        if(this.keep_running == false) {
-            this.run(this.max_cycles);
-        }
+      if(this.keep_running == false) {
+        if(this.debug) console.log("CPU Waking");
+        this.run(this.max_cycles);
+      }
     }
-    return this;
+  }
+  
+  return this;
 }
 
 VM.CPU.prototype.interrupts_pending = function()
@@ -2422,8 +2528,9 @@ VM.CPU.prototype.disable_interrupts = function()
 
 VM.CPU.prototype.enable_interrupts = function()
 {
-    this.set_status(VM.CPU.STATUS.INTR);
-    return this;
+  this.set_status(VM.CPU.STATUS.INTR);
+  if(this.debug) console.log("Pending interrupts", this._pending_interrupts);
+  return this;
 }
 
 
@@ -2477,6 +2584,7 @@ VM.CPU.test_suite = function()
     assert.is_thrown(function() { vm.step(); }, VM.UnknownInstructionError, "because it is exceptional");
     
     vm.reset();
+    vm.enable_interrupts();
     vm.exceptional = false;
     vm.step();
     assert.assert(vm.interrupts_pending(), 'has an interrupt');
