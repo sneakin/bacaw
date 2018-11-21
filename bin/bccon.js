@@ -21,18 +21,18 @@ function vm_init(ram_size)
     mmu.map_memory(0x0, ram_size, new RAM(ram_size));
 
     var devcon = new DevConsole();
-    mmu.map_memory(0xF0000800, devcon.ram_size(), devcon);
+    mmu.map_memory(0xF0001000, devcon.ram_size(), devcon);
 
     var output_irq = VM.CPU.INTERRUPTS.user;
     var output = new OutputStream(process.stdout, null, cpu, output_irq);
-    mmu.map_memory(0xF0002000, output.ram_size(), output);
+    mmu.map_memory(0xF0003000, output.ram_size(), output);
 
     var input_irq = VM.CPU.INTERRUPTS.user + 1;
-    var input_addr = 0xF0003000;
+    var input_addr = 0xF0004000;
     var input = new InputStream(process.stdin, null, cpu, input_irq);
     mmu.map_memory(input_addr, input.ram_size(), input);
 
-    var timer_addr = 0xF0004000;
+    var timer_addr = 0xF0002000;
     var timer_irq = VM.CPU.INTERRUPTS.user + 2;
     var timer = new Timer(cpu, timer_irq, 1<<20);
     mmu.map_memory(timer_addr, timer.ram_size(), timer);

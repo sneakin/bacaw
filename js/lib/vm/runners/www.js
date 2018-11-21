@@ -35,29 +35,30 @@ function runner_init(width, height, load_offset, mem_size)
 
     mmu = new VM.MMU();
   	//cpu = new VM.CPU(mmu, 1<<16);
-    mmu.map_memory(0, 0x2, new RAM(0x2));
+  //mmu.map_memory(0, 0x2, new RAM(0x2));
     //  mmu.map_memory(0x2, 0x10000, new RAM(0x10000 - 0x2));
+    mmu.map_memory(0, 4096, new RAM(4096));
 	  cpu = new VM.CPU(mmu, mem_size);
-    mmu.map_memory(0x2, mem_size - 2, new RAM(mem_size - 0x2));
+    mmu.map_memory(4096, mem_size - 4096, new RAM(mem_size - 4096));
 
     var keyboard_irq = VM.CPU.INTERRUPTS.user;
-    var keyboard_addr = 0xF0000000;
+    var keyboard_addr = 0xF0004000;
     keyboard = new Keyboard(window, cpu, keyboard_irq);
     mmu.map_memory(keyboard_addr, keyboard.ram_size(), keyboard);
     
     var devcon = new Console();
-    var devcon_addr = 0xF0000800;
+    var devcon_addr = 0xF0001000;
     mmu.map_memory(devcon_addr, devcon.ram_size(), devcon);
 
     var gfx_mem_size = 16*1024;
     var gfx_irq = VM.CPU.INTERRUPTS.user + 1;
     video = new GFX(cpu, gfx_irq, [ main_window, second_window ], width, height, gfx_mem_size);
-    var gfx_addr = 0xF0001000;
+    var gfx_addr = 0xF0010000;
     var gfx_input_addr = gfx_addr + video.input_struct.fields['input'].offset;
     gfx_swap_addr = gfx_addr + video.input_struct.fields['swap'].offset;
     mmu.map_memory(gfx_addr, video.ram_size(), video);
 
-    var timer_addr = 0xF000100;
+    var timer_addr = 0xF0002000;
     var timer_irq = VM.CPU.INTERRUPTS.user + 2;
     var timer = new Timer(cpu, timer_irq, 1<<20);
     mmu.map_memory(timer_addr, timer.ram_size(), timer);

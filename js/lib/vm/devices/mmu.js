@@ -1,4 +1,5 @@
 const RangedHash = require('vm/ranged_hash.js');
+const PagedHash = require('paged_hash.js');
 
 if((typeof(window) != 'undefined' && !window['VM']) ||
    (typeof(global) != 'undefined' && !global['VM'])) {
@@ -7,7 +8,8 @@ if((typeof(window) != 'undefined' && !window['VM']) ||
 
 VM.MMU = function()
 {
-    this.memory_map = new RangedHash();
+  //this.memory_map = new RangedHash();
+  this.memory_map = new PagedHash();
 }
 
 VM.MMU.step = function()
@@ -17,7 +19,7 @@ VM.MMU.step = function()
 
 VM.MMU.prototype.map_memory = function(addr, size, responder)
 {
-    this.memory_map.add(addr, addr + size, responder);
+    this.memory_map.add(addr, size, responder);
     return this;
 }
 
@@ -28,15 +30,18 @@ VM.MMU.prototype.memread = function(addr, count)
         var a;
         for(var offset = 0; offset < count; offset++) {
             a = addr + offset;
-            var mem = this.memory_map.gete(a);
-            var inc = mem.value.read(a - mem.start, count, buffer, offset);
+          //var mem = this.memory_map.gete(a);
+          //var inc = mem.value.read(a - mem.start, count, buffer, offset);
+            var mem = this.memory_map.get(a);
+            var inc = mem.value.read(a - mem.addr, count, buffer, offset);
             if(inc == 0) break;
             offset += inc - 1;
         }
         return buffer;
     } else {
-        var type = count;
-        if(typeof(type) == 'string') type = VM.TYPES[count];
+      var type = count;
+      if(type == null) type = VM.TYPES.ULONG;
+      else if(typeof(type) == 'string') type = VM.TYPES[count];
         var b = this.memread(addr, 4);
         var dv = new DataView(b.buffer, b.byteOffset);
         return type.get(dv, 0, true);
@@ -69,8 +74,10 @@ VM.MMU.prototype.memwrite = function(addr, data, type)
         var a, offset;
         for(offset = 0; offset < data.length; offset++) {
             a = addr + offset;
-            var mem = this.memory_map.gete(a);
-            var inc = mem.value.write(a - mem.start, data.slice(offset));
+          //var mem = this.memory_map.gete(a);
+          //var inc = mem.value.write(a - mem.start, data.slice(offset));
+            var mem = this.memory_map.get(a);
+            var inc = mem.value.write(a - mem.addr, data.slice(offset));
             if(inc == 0) {
                 break;
             }

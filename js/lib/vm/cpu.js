@@ -5,7 +5,7 @@ if((typeof(window) != 'undefined' && !window['VM']) ||
 
 const util = require('util.js');
 require('vm/types.js');
-const RangedHash = require('vm/ranged_hash.js');
+const PagedHash = require('paged_hash.js');
 const DispatchTable = require('vm/dispatch_table.js');
 const assert = require('asserts.js');
 
@@ -1008,8 +1008,8 @@ VM.CPU.INS_DEFS = [
         }
       ],
       [ "NOT", "Store the negated bits of Y into X.",
-        [ [ 'x', [ 0x00000F00, 8 ] ],
-          [ 'y', [ 0x0000F000, 12  ]]
+        [ [ 'x', [ 0x0F00, 8 ] ],
+          [ 'y', [ 0xF000, 12  ]]
         ],
         function(vm, ins) {
             vm.regwrite(ins.x, ~vm.regread(ins.y));
@@ -2276,6 +2276,8 @@ VM.CPU.prototype.step = function()
         if(e == DispatchTable.UnknownKeyError) {
             this.unknown_op(ins, ip);
         } else if(e instanceof RangedHash.InvalidAddressError) {
+            this.interrupt(VM.CPU.INTERRUPTS.mem_fault);
+        } else if(e instanceof PagedHash.NotMappedError) {
             this.interrupt(VM.CPU.INTERRUPTS.mem_fault);
         } else {
             if(this.exceptional) {
