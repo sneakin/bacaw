@@ -30,8 +30,9 @@ VM.CPU.STATUS = {
 	  NEGATIVE: 1<<1,
     CARRY: 1<<2,
     ERROR: 1<<3,
-	  INTR: 1<<4,
-	  SLEEP: 1<<5
+	  INT_ENABLED: 1<<4,
+  	SLEEP: 1<<5,
+    INT_FLAG: 1<<6
 };
 VM.CPU.STATUS.NUMERICS = VM.CPU.STATUS.ZERO | VM.CPU.STATUS.NEGATIVE | VM.CPU.STATUS.CARRY | VM.CPU.STATUS.ERROR;
 
@@ -1139,13 +1140,14 @@ VM.CPU.INS_DEFS = [
             vm.regwrite('sp', 0x10);
             vm.regwrite('isr', 0x100);
 	          vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'has yet to set the INTR status flag');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) == 0, 'has yet to set the INT_ENABLED status flag');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_FLAG) == 0, 'has yet to set the INT_FLAG status flag');
             assert.assert(vm.memreadl(vm.regread('sp')) != 4, 'has yet to push IP');
             assert.assert(vm.regread('ip') == VM.CPU.INSTRUCTION_SIZE, 'has yet to change IP');
 
             // interrupts are disabled, so nothing happens
             vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'interrupts disabled');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) == 0, 'interrupts disabled');
             assert.equal(vm._pending_interrupts.length, 0, 'is not pending');
             assert.assert(vm.regread('sp') == 0x10, 'did not push IP: ' + vm.memreadl(vm.regread('sp')));
 
@@ -1153,11 +1155,12 @@ VM.CPU.INS_DEFS = [
             vm.enable_interrupts();
 	          vm.regwrite('ip', 0);
             vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) != 0, 'interrupts enabled');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) != 0, 'interrupts enabled');
             assert.equal(vm._pending_interrupts.length, 1, 'is pending');
 
             vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'disables interrupts');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) == 0, 'disables interrupts');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_FLAG) != 0, 'sets interrupt flag');
             assert.assert(vm.regread('sp') == 0x10 - 8, 'pushed IP: ' + vm.memreadl(vm.regread('sp')));
             assert.assert(vm.regread('ip') == 0x100 + 12 * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE, 'sets IP to 0x100 + 12*ISR_BYTE_SIZE: ' + vm.regread('ip').toString(16));
             assert.equal(vm._pending_interrupts.length, 0, 'is no longer pending');
@@ -1235,7 +1238,7 @@ VM.CPU.INS_DEFS = [
             },
             function(vm, ins) {
                 // while sleeping, toggling the sleep status causes the new value to stick after RTI
-                vm.clear_status(VM.CPU.STATUS.INTR);
+                vm.clear_status(VM.CPU.STATUS.INT_ENABLED);
                 vm.set_status(VM.CPU.STATUS.SLEEP);
                 vm.memwritel(0, vm.encode({op: VM.CPU.INS.LOAD, dest: VM.CPU.REGISTERS.R0 }));
                 vm.memwriteL(VM.CPU.INSTRUCTION_SIZE, 0);
@@ -1243,7 +1246,7 @@ VM.CPU.INS_DEFS = [
                 vm.memwritel(VM.CPU.INSTRUCTION_SIZE * 2 + VM.TYPES.ULONG.byte_size, vm.encode({op: ins}));
                 vm.regwrite('sp', 0x100);
                 vm.push(0x30);
-                vm.push(VM.CPU.STATUS.NEGATIVE|VM.CPU.STATUS.SLEEP);
+                vm.push(VM.CPU.STATUS.NEGATIVE|VM.CPU.STATUS.INT_ENABLED,VM.CPU.STATUS.SLEEP);
                 vm.step();
                 vm.step();
                 vm.step();
@@ -1252,6 +1255,8 @@ VM.CPU.INS_DEFS = [
                 assert.equal(vm.regread('ip'), 0x30, 'sets IP to second value on the stack');
                 assert.assert((vm.regread('status') & VM.CPU.STATUS.SLEEEP) == 0, 'keeps sleep bit clear');
                 assert.assert((vm.regread('status') & VM.CPU.STATUS.NEGATIVE) != 0, 'kept other bits');
+                assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) != 0, 'kept other bits');
+                assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_FLAG) == 0, 'clears interrupt flag');
             }
         ]
       ],
@@ -1316,13 +1321,14 @@ VM.CPU.INS_DEFS = [
             vm.regwrite('sp', 0x10);
             vm.regwrite('isr', 0x100);
 	          vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'has yet to set the INTR status flag');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) == 0, 'has yet to set the INT_ENABLED status flag');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_FLAG) == 0, 'has yet to set the INT_FLAG status flag');
             assert.assert(vm.memreadl(vm.regread('sp')) != 4, 'has yet to push IP');
             assert.assert(vm.regread('ip') == VM.CPU.INSTRUCTION_SIZE, 'has yet to change IP');
 
             // interrupts are disabled, so nothing happens
             vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'interrupts disabled');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) == 0, 'interrupts disabled');
             assert.equal(vm._pending_interrupts.length, 0, 'is not pending');
             assert.assert(vm.regread('sp') == 0x10, 'did not push IP: ' + vm.memreadl(vm.regread('sp')));
 
@@ -1330,11 +1336,12 @@ VM.CPU.INS_DEFS = [
             vm.enable_interrupts();
 	          vm.regwrite('ip', 0);
             vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) != 0, 'interrupts enabled');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) != 0, 'interrupts enabled');
             assert.equal(vm._pending_interrupts.length, 1, 'is pending');
 
             vm.step();
-	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'disables interrupts');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) == 0, 'disables interrupts');
+	          assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_FLAG) != 0, 'sets the interrupt flag');
             assert.assert(vm.regread('sp') == 0x10 - 8, 'pushed IP: ' + vm.memreadl(vm.regread('sp')));
             assert.assert(vm.regread('ip') == 0x100 + 12 * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE, 'sets IP to 0x100 + 12*ISR_BYTE_SIZE: ' + vm.regread('ip').toString(16));
             assert.equal(vm._pending_interrupts.length, 0, 'is no longer pending');
@@ -1584,7 +1591,7 @@ VM.CPU.INS_DEFS = [
             vm.enable_interrupts();
             vm.memwritel(0, vm.encode({op: ins}));
             vm.step();
-            assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) == 0, 'clears the interrupt enable bit');
+            assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) == 0, 'clears the interrupt enable bit');
         }
       ],
       [ "RESET", "Reinitialize the CPU.",
@@ -1698,12 +1705,12 @@ VM.CPU.INS_DEFS = [
             vm.disable_interrupts();
             vm.memwritel(0, vm.encode({op: ins}));
             vm.step();
-            assert.assert((vm.regread('status') & VM.CPU.STATUS.INTR) != 0, 'sets the interrupt enable bit');
+            assert.assert((vm.regread('status') & VM.CPU.STATUS.INT_ENABLED) != 0, 'sets the interrupt enable bit');
         }
       ],
       [ "SLEEP", "Sleeps the CPU.", [],
         function(vm, ins) {
-          if(vm.debug) console.log("SLEEP", vm.regread('status') & VM.CPU.STATUS.SLEEP);
+          if(vm.debug) console.log("SLEEP", vm.regread('status') & VM.CPU.STATUS.SLEEP, vm.cycles);
             vm.set_status(VM.CPU.STATUS.SLEEP);
             return true;
         },
@@ -1767,7 +1774,7 @@ VM.CPU.INS_DEFS = [
                 vm.regwrite(2, 0x10);
                 vm.memwritel(0x10, 0x40);
                 vm.step();
-                assert.equal(vm.regread('ip'), 0x80 + 0x90, 'sets IP to reg + offset');
+                assert.equal(vm.regread('ip'), 0x80 + 0x10, 'sets IP to reg + offset');
                 assert.equal(vm.memreadL(vm.regread('sp') + 0), VM.CPU.INSTRUCTION_SIZE, 'pushed IP');
             }
         ]
@@ -2197,7 +2204,8 @@ VM.CPU.prototype.run = function(cycles)
 	  } while((cycles == null || i < cycles)
             && (this.keep_running != false && this.halted == false)
                 || (this.interrupts_pending()
-                    && this.check_condition(VM.CPU.STATUS.INTR)));
+                    && (this.check_condition(VM.CPU.STATUS.INT_ENABLED)
+                        || this.check_condition(VM.CPU.STATUS.INT_FLAG))));
 
 	  return this;
 }
@@ -2482,14 +2490,16 @@ VM.CPU.prototype.interrupt = function(interrupt)
   if(this.debug) {
     console.log("Interrupt", interrupt, VM.CPU.INTERRUPTS[interrupt],
                 this.regread('status') & VM.CPU.STATUS.SLEEP,
-                this.regread('status') & VM.CPU.STATUS.INTR,
+                this.regread('status') & VM.CPU.STATUS.INT_ENABLED,
+                this.regread('status') & VM.CPU.STATUS.INT_FLAG,
                 this.regread('ip'),
                 this.regread('sp'),
                 Date.now());
     this.debug_dump();
   }
-  
-  if((this.regread('status') & VM.CPU.STATUS.INTR) != 0) {
+
+  // todo need to queue when inside an ISR w/ INT_ENABLED = 0
+  if((this.regread('status') & (VM.CPU.STATUS.INT_ENABLED | VM.CPU.STATUS.INT_FLAG)) != 0) {
     this._pending_interrupts.push(interrupt);
     if((this.regread('status') & VM.CPU.STATUS.SLEEP) != 0) {
       if(this.keep_running == false) {
@@ -2509,10 +2519,11 @@ VM.CPU.prototype.interrupts_pending = function()
 
 VM.CPU.prototype.do_interrupt = function()
 {
-    if(this.regread('status') & VM.CPU.STATUS.INTR
+  if((this.regread('status') & VM.CPU.STATUS.INT_ENABLED)
        && this._pending_interrupts.length > 0) {
         this.push(this.regread('ip'));
         this.push(this.regread('status'));
+        this.set_status(VM.CPU.STATUS.INT_FLAG);
         this.disable_interrupts();
         var intr = this._pending_interrupts.shift();
         this.regwrite('ip', this.regread('isr') + intr * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE);
@@ -2525,13 +2536,13 @@ VM.CPU.prototype.do_interrupt = function()
 
 VM.CPU.prototype.disable_interrupts = function()
 {
-    this.clear_status(VM.CPU.STATUS.INTR);
+    this.clear_status(VM.CPU.STATUS.INT_ENABLED);
     return this;
 }
 
 VM.CPU.prototype.enable_interrupts = function()
 {
-  this.set_status(VM.CPU.STATUS.INTR);
+  this.set_status(VM.CPU.STATUS.INT_ENABLED);
   if(this.debug) console.log("Pending interrupts", this._pending_interrupts);
   return this;
 }
