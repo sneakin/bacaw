@@ -14,22 +14,27 @@ outputs = [ 'index.html',
             'doc/index.html',
             'style.css',
             'runner_style.css',
-            'dev_style.css'
+            'dev_style.css',
+            'images/unscii-8.png',
+            'images/unscii-16.png'
           ].collect do |src|
   buildroot.join(src)
 end
 
 directory buildroot
 directory buildroot.join('doc') => buildroot
+directory buildroot.join('images') => buildroot
 
 [ 'style.css',
   'runner_style.css',
-  'dev_style.css'
-].each do |src|
-  output = buildroot.join(src)
-  src = root.join('www', src)
+  'dev_style.css',
+  'images/unscii-8.png',
+  'images/unscii-16.png'
+].each do |name|
+  output = buildroot.join(name)
+  src = root.join('www', name)
   
-  file output => [ src, buildroot ] do |t|
+  file output => [ src, buildroot, File.dirname(output) ] do |t|
     FileUtils.copy(t.sources[0], t.name)
   end
 end
