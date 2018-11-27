@@ -8,19 +8,34 @@ if((typeof(window) != 'undefined' && !window['VM']) ||
 
 VM.MMU = function()
 {
+  this.name = "MMU";
   //this.memory_map = new RangedHash();
   this.memory_map = new PagedHash();
 }
 
-VM.MMU.step = function()
+VM.MMU.NotMappedError = function(addr)
 {
-    return this;
+  this.msg = "Address not mapped: " + addr;
+  this.addr = addr;
+}
+
+VM.MMU.prototype.step = function()
+{
+  return false;
 }
 
 VM.MMU.prototype.map_memory = function(addr, size, responder)
 {
     this.memory_map.add(addr, size, responder);
     return this;
+}
+
+VM.MMU.prototype.start_address_for = function(dev)
+{
+  var range = this.memory_map.range_for(dev);
+  if(range) {
+    return range.addr;
+  }
 }
 
 VM.MMU.prototype.memread = function(addr, count)
@@ -32,17 +47,19 @@ VM.MMU.prototype.memread = function(addr, count)
             a = addr + offset;
           //var mem = this.memory_map.gete(a);
           //var inc = mem.value.read(a - mem.start, count, buffer, offset);
-            var mem = this.memory_map.get(a);
+          var mem = this.memory_map.get(a);
+          if(mem == null) throw new VM.MMU.NotMappedError(addr);
             var inc = mem.value.read(a - mem.addr, count, buffer, offset);
             if(inc == 0) break;
             offset += inc - 1;
         }
         return buffer;
     } else {
-      var type = count;
-      if(type == null) type = VM.TYPES.ULONG;
-      else if(typeof(type) == 'string') type = VM.TYPES[count];
-        var b = this.memread(addr, 4);
+        var type = count;
+        if(type == null) type = VM.TYPES.ULONG;
+        else if(typeof(type) == 'string') type = VM.TYPES[count];
+        
+        var b = this.memread(addr, type.byte_size);
         var dv = new DataView(b.buffer, b.byteOffset);
         return type.get(dv, 0, true);
     }
@@ -77,6 +94,7 @@ VM.MMU.prototype.memwrite = function(addr, data, type)
           //var mem = this.memory_map.gete(a);
           //var inc = mem.value.write(a - mem.start, data.slice(offset));
             var mem = this.memory_map.get(a);
+            if(mem == null) throw new VM.MMU.NotMappedError(addr);
             var inc = mem.value.write(a - mem.addr, data.slice(offset));
             if(inc == 0) {
                 break;

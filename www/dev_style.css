@@ -1,5 +1,11 @@
+body {
+    /*font-family: "Unscii 16-full", "unifont", "Courier", "fixed";*/
+  font-family: "Inconsolata", "unifont", monospace;
+}
+
 .vm-display {
     float: left;
+    margin: 0.25em;
 }
 
 .info {
@@ -18,4 +24,41 @@
 .horiz-bar > BR {
     float: none;
     clear: both;
+}
+
+.info {
+    min-width: 64ex;
+}
+
+.info TABLE {
+    width: 64ex;
+}
+
+DL DT {
+    float: left;
+    width: 16ex;
+}
+
+DL DD {
+}
+
+table tr:nth-child(even), dl dd:nth-of-type(even), dl dt:nth-of-type(even) {
+    background: #eef;
+}
+table tr:nth-child(odd), dl dd:nth-of-type(odd), dl dt:nth-of-type(odd) {
+    background: #fee;
+}
+
+#registers TABLE TD, #stack TABLE TD {
+    width: 16ex;
+    text-align: right;
+}
+
+#registers TD .more {
+    width: 32ex;
+}
+
+#stack, #console {
+    height: 16em;
+    overflow: scroll;
 }

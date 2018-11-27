@@ -11,22 +11,126 @@
 	<body onload="dev_init();">
     <div class="vm-display med-res"><canvas id="second_window">Sorry</canvas><canvas id="main_window">Sorry</canvas>
     </div>
+    <div class="info cpu-info">
+      <div class="horiz-bar">
+        <input type="button" value="Run" id="run-button"/>
+        <input type="button" value="Step" id="step-button"/>
+        <input type="button" value="Reset" id="reset-button"/>
+        <input type="button" value="Reload" id="reload-button"/>
+        <input type="file" value="Load" id="load-button"/>
+        <br/>
+      </div>
+      <h1>Info</h1>
+      <div id="info">
+        <dl>
+          <dt>Cycles</dt>
+          <dd id="info-cycles">0</dd>
+          <dt>Cycles/Sec</dt>
+          <dd id="info-cycles-per-sec">0</dd>
+          <dt>Frames/Sec</dt>
+          <dd id="info-frames-per-sec">0</dd>
+          <dt>ms/frame</dt>
+          <dd id="info-time-per-frame">0</dd>
+        </dl>
+      </div>
+    </div>
     <div class="info">
-      <div class="cpu-info">
-        <div class="horiz-bar">
-          <input type="button" value="Run" id="run-button"/>
-          <input type="button" value="Step" id="step-button"/>
-          <input type="button" value="Reset" id="reset-button"/>
-          <input type="button" value="Reload" id="reload-button"/>
-          <input type="file" value="Load" id="load-button"/>
-          <br/>
+      <h1>Console</h1>
+      <div id="console">
+        <ul id="console-log"></ul>
+      </div>
+    </div>
+    <div class="info">
+      <h1>Registers</h1>
+      <div id="registers">
+        <table id="register-table">
+          <tr>
+            <th>Name</th>
+            <th>Hex</th>
+            <th>Dec</th>
+          </tr>
+          <tr class="template">
+            <th class="name">Name</th>
+            <td class="register-value value-hex">Hex</td>
+            <td class="register-value value-dec">Dec</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="info">
+      <h1>Stack</h1>
+      <div id="stack">
+        <table id="stack-table">
+          <tr>
+            <th>Size</th>
+            <td id="stack-size-slots">{{num_slots}}</td>
+            <td id="stack-size-hex">{{#hex byte_size)}}</td>
+            <td id="stack-size-dec">{{#dec byte_size}}</td>
+          </tr>
+          <tr>
+            <th>Slot</th>
+            <th>Address</th>
+            <th>Hex</th>
+            <th>Dec</th>
+          </tr>
+          <tr class="slot-template">
+            <th class="offset">{{offset}}</th>
+            <td class="address">{{#hex address}}</td>
+            <td class="value-hex">{{#hex value}}</td>
+            <td class="value-dec">{{#dec value}}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="info">
+      <h1>Instructions</h1>
+      <div id="instructions">
+        <div id="instructions-controls">
+          <label for="instructions-offset">Offset</label>
+          <input id="instructions-offset" value="0"></input>
+          <label for="instructions-follow">Follow?</label>
+          <input id="instructions-follow" value="0" type="checkbox"></input>
+          <label for="instructions-show-args">Op Args?</label>
+          <input id="instructions-show-args" value="0" type="checkbox"></input>
         </div>
-        <h1>Registers</h1>
-        <div id="registers">
+        <table id="instructions-table">
+          <tr>
+            <th>Address</th>
+            <th>Memory</th>
+            <th>Instruction</th>
+          </tr>
+          <tr class="template">
+            <td class="address"></td>
+            <td class="memory"></td>
+            <td class="instruction"></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="info">
+      <h1>Memory</h1>
+      <div id="memory">
+        <div id="memory-controls">
+          <label for="memory-offset">Offset</label>
+          <input id="memory-offset" value="0"></input>
+          <label for="memory-page">Page</label>
+          <input id="memory-page" value="0"></input>
         </div>
-        <h1>Devices</h1>
-        <div id="devices">
-        </div>
+        <table id="memory-table">
+          <tr>
+            <th>Address</th>
+            <th>Data</th>
+          </tr>
+          <tr class="template">
+            <td class="address"></td>
+            <td class="data"></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="info">
+      <h1>Devices</h1>
+      <div id="devices">
       </div>
     </div>
 	</body>

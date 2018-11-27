@@ -5,6 +5,7 @@ const RAM = require('vm/devices/ram.js');
 
 function Timer(vm, irq, frequency)
 {
+  this.name = "Timer";
     this.vm = vm;
     this.irq = irq;
     this.frequency = frequency;
@@ -62,11 +63,16 @@ Timer.prototype.write = function(addr, data)
     return n;
 }
 
-Timer.prototype.step = function()
+Timer.prototype.tick_timers = function()
 {
     for(var i = 0; i < this.timers.length; i++) {
         this.update_timer(i);
     }
+}
+
+Timer.prototype.step = function()
+{
+  return false;
 }
 
 Timer.prototype.update_timer = function(timer)

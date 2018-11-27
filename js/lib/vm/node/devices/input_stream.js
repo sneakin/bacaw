@@ -94,6 +94,7 @@ InputStream.prototype.write = function(addr, data)
 
 InputStream.prototype.step = function()
 {
+  return false;
 }
 
 if(typeof(module) != 'undefined') {

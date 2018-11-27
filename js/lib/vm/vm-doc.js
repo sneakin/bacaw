@@ -131,6 +131,10 @@ function build_ins_doc_def(ins)
         for(var i in ins.arg_masks) {
             push_arg_mask(ins.arg_masks[i]);
         }
+
+        if(ins.has_literal) {
+            args.push([ "", 'data', ins.has_literal.name ]);
+        }
         
         docdiv.appendChild(html_table(args));
     }

@@ -59,6 +59,7 @@ RAM.prototype.set = function(addr, count, value)
 
 RAM.prototype.step = function()
 {
+  return false;
 }
 
 var RAM_TYPE_ACCESSORS = [

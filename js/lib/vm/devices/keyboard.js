@@ -6,7 +6,13 @@ const RAM = require('vm/devices/ram.js');
 
 function Keyboard(el, vm, irq)
 {
-    this.element = el;
+  this.name = "Keyboard";
+  this.running = false;
+  this.element = el;
+  var self = this;
+	  this.element.onkeyup = function(ev) { return self.on_key(false, ev); };
+	  this.element.onkeydown = function(ev) { return self.on_key(true, ev); };
+
     this.vm = vm;
     this.irq = irq;
     this.ram = new RAM(Keyboard.MemoryStruct_16.byte_size);
@@ -45,18 +51,15 @@ Keyboard.prototype.reset = function()
     this.buffer.clear();
 }
 
-Keyboard.prototype.get_ready = function()
+Keyboard.prototype.step = function()
 {
-    var self = this;
-	  this.element.onkeyup = function(ev) { return self.on_key(false, ev); };
-	  this.element.onkeydown = function(ev) { return self.on_key(true, ev); };
-    return this;
+  this.running = true;
+  return false;
 }
 
 Keyboard.prototype.stop = function()
 {
-    if(this.element.onkeyup) this.element.onkeyup = null;
-    if(this.element.onkeydown) this.element.onkeydown = null;
+  this.running = false;
 }
 
 Keyboard.prototype.encode_modifiers = function(pressed, ev)
@@ -83,6 +86,13 @@ Keyboard.prototype.buffer_full = function()
 
 Keyboard.prototype.on_key = function(pressed, ev)
 {
+    if(ev.target.tagName == 'INPUT') {
+        if(this.debug) console.log(ev);
+        return;
+    }
+    
+  if(this.running != true) return;
+  
     if(ev.key == 'r' && ev.ctrlKey) {
         return;
     }
@@ -95,12 +105,14 @@ Keyboard.prototype.on_key = function(pressed, ev)
         modifiers: this.encode_modifiers(pressed, ev),
         key_code: ev.keyCode
     };
-	  console.log("on_key " + pressed, ev, ev.code, this.mem.events.read_offset, this.mem.events.write_offset, this.buffer.empty(), this.buffer.length(), kb_ev);
-    this.buffer.push(kb_ev);
 
-    // todo beep if the buffer is full?
-    
-    this.vm.interrupt(this.irq);
+    if(this.debug) {
+	    console.log("on_key " + pressed, ev, ev.code, this.mem.events.read_offset, this.mem.events.write_offset, this.buffer.empty(), this.buffer.length(), kb_ev);
+    }
+
+  this.buffer.push(kb_ev);
+  // todo beep if the buffer is full?
+  this.vm.interrupt(this.irq);
 }
 
 Keyboard.prototype.read = function(addr, count, output, offset)

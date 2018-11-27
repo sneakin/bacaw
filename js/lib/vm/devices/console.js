@@ -5,13 +5,15 @@ require('vm/types.js');
 function Console(mem_size)
 {
     mem_size = mem_size || 1024;
-    
+
+    this.name = "Console";
     this.data_struct = new DataStruct([
         [ 'buffer', mem_size, VM.TYPES.UBYTE ],
         [ 'flush', VM.TYPES.ULONG ]
     ]);
     this.ram = new RAM(this.data_struct.byte_size);
-    this.data = this.data_struct.proxy(this.ram.data_view());
+  this.data = this.data_struct.proxy(this.ram.data_view());
+  this.callbacks = [ function(str) { console.log(str); } ];
     /*
     // Fixme events aren't being fired in node. Forget if they're used in the browser.
     var self = this;
@@ -30,9 +32,18 @@ Console.prototype.ram_size = function()
   return this.ram.length;
 }
 
+Console.prototype.add_callback = function(cb)
+{
+  this.callbacks.push(cb);
+  return this;
+}
+
 Console.prototype.flush = function()
 {
-  console.log(String.fromCharCode.apply(null, this.data.buffer.slice(0, this.data.flush)).trim());
+  var str = String.fromCharCode.apply(null, this.data.buffer.slice(0, this.data.flush)).trim();
+  for(var i in this.callbacks) {
+    this.callbacks[i](str);
+  }
   this.ram.set(0, this.ram.length, 0);
 }
 
@@ -49,11 +60,11 @@ Console.prototype.write = function(addr, data)
   }
 }
 
-Console.prototype.step = function()
+Console.prototype.step = function(s)
 {
+  return false;
 }
 
 if(typeof(module) != 'undefined') {
 	module.exports = Console;
 }
-

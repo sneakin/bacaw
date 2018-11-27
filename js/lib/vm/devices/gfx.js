@@ -6,6 +6,7 @@ const util = require('util.js');
 
 function GFX(vm, irq, canvases_for_layers, w, h, mem_size)
 {
+    this.name = "GFX";
     this.vm = vm;
     this.mem_size = mem_size;
     this.input_ram = new RAM(mem_size);
@@ -401,22 +402,27 @@ GFX.prototype.call_return = function()
         this.input_data.ip = this.input_data.call_stack[--this.input_data.sp];
         return true;
     } else {
-        this.stop_exec();
+        //this.stop_exec();
         return false;
     }
 }
 
 GFX.prototype.swap_buffers = function()
 {
+    if(this.debug) console.log("Swapping buffers", this.input_data.swapping, this.input_data.swap, this.timer);
     if(this.input_data.swapping == 0) {
         if(this.input_data.swap != 0) {
+            if(this.debug) console.log("Commence swap");
             this.input_data.ip = this.input_data.swap - 1;
-            this.input_data.swapping = this.input_data.ip;
-            if(this.input_data.flags & GFX.Flags.SYNC) {
-                this.request_animation();
-            } else {
-                this.run_anim();
-            }                
+            this.input_data.swapping = this.input_data.swap;
+            /*
+      if(this.input_data.flags & (GFX.Flags.SYNC | GFX.Flags.RESYNC)) {
+        this.request_animation();
+      } else {
+        this.run_anim();
+      } 
+*/
+            
             return false;
         }
     }
@@ -426,15 +432,18 @@ GFX.prototype.swap_buffers = function()
 
 GFX.prototype.request_animation = function()
 {
+    if(this.debug) console.log("GFX request animation", this.timer, this.raf);
+    /*
     if(this.timer == null) {
         this.raf = null;
         var self = this;
         this.timer = window.requestAnimationFrame(function(dt) {
-            self.run_anim(dt);
+          self.run_anim(dt);
         });
     } else {
         this.raf = true;
     }
+*/
 }
 
 GFX.prototype.stop = function()
@@ -454,51 +463,58 @@ GFX.prototype.stop = function()
 
 GFX.prototype.stop_exec = function()
 {
-    this.input_data.ip = -1;
+    this.input_data.ip = 0;
     this.input_data.swapping = 0;
     this.input_data.swap = 0;
+
+    this.trigger_interrupt();
 
     return this;
 }
 
 GFX.prototype.run_anim = function(dt)
 {
+    if(this.debug) console.log("GFX run_anim", dt, this.timer, this.raf, this.input_data.ip);
+    
     this.timer = null;
-    if(this.raf) {
+
+    /*
+    if((this.input_data.flags & GFX.Flags.RESYNC) || this.raf) {
         this.request_animation();
     }
-    
+  */
+
     var r;
     do {
         r = this.step_anim();
     } while(r != false);
+
+    if(this.debug) console.log("GFX run_anim done", this.input_data.ip, this.input_data.last_error);
 }
 
 GFX.prototype.step = function()
 {
-    //return this.step_anim();
+    return this.step_anim();
 }
 
 GFX.prototype.trigger_interrupt = function()
 {
+    if(this.debug) console.log("GFX trigger interrupt");
     if(this.vm) this.vm.interrupt(this.irq);
 }
 
 GFX.prototype.step_anim = function()
 {
-    if(this.swap_buffers()) {
-        if(this.input_data.swapping != 0) {
-            try {
-                if(this.process_drawing_cmd() != false) {
-                    return this;
-                }
-            } catch(err) {
-                this.write_error(err, i);
+    if(this.input_data.swapping != 0) {
+        try {
+            if(this.process_drawing_cmd() != false) {
+                return this;
             }
-
-            this.stop_exec();
-            this.trigger_interrupt();
+        } catch(err) {
+            this.write_error(err, i);
         }
+
+        this.stop_exec();
     }
 
     return false;
@@ -609,6 +625,7 @@ GFX.encode_array = function(arr, bytes) {
 function gfx_test_cmds(r, g, b)
 {
     return [
+        GFX.CMD_SET_LAYER, 0,
         GFX.CMD_CLEAR,
         GFX.CMD_SET_LINE_CAP, GFX.LINE_CAPS.ROUND,
         GFX.CMD_SET_FILL, r, g, b, 255,
@@ -668,31 +685,54 @@ GFX.video_test = function(canvas, cycles)
     var cmd_arr = GFX.encode_array(gfx_test_cmds(0, 0, 128));
     video.write(video.input_data.ds.fields['input'].offset, cmd_arr);
     //video.write_array(video.input_data.ds.fields['input'].offset, gfx_test_cmds(0, 0, 128));
-    video.input_data.swap = 1;
-    //video.write(video.input_data.swap, [ cycles || 200 ]);
-
-    do {
+    console.log("Command byte length", cmd_arr.byteLength);
+    console.log("Setting swap to 1");
+    video.write(video.input_data.ds.fields['swap'].offset, [ 1, 0, 0, 0]);
+    //video.input_data.swap = 1;
+    /*
+  console.log("Stepping");
+  do {
         video.step();
     } while(video.input_data.swapping != 0);
-    
-    var call_cmds = [
-        GFX.CMD_SAVE,
-        GFX.CMD_TRANSLATE, 10.0, 0.0,
-        GFX.CMD_CALL, 32,
-        GFX.CMD_ROTATE, Math.PI / 8.0,
-        GFX.CMD_CALL, 32,
-        GFX.CMD_ROTATE, Math.PI / 8.0,
-        GFX.CMD_CALL, 32,
-        GFX.CMD_RESTORE,
-        GFX.CMD_RET
-    ];
-    console.log(cmd_arr.byteLength);
-    var off = video.input_data.ds.fields['input'].offset + cmd_arr.byteLength;
-    video.write(off, GFX.encode_array(call_cmds));
-    video.input_data.swap = cmd_arr.byteLength + 1;
+*/
     
     return video;
 }
+
+GFX.video_test_call = function(video)
+{
+    var call_cmds = [
+        GFX.CMD_SAVE,
+        GFX.CMD_TRANSLATE, 10.0, 0.0,
+        GFX.CMD_CALL, 27,
+        GFX.CMD_ROTATE, Math.PI / 8.0,
+        GFX.CMD_CALL, 27,
+        GFX.CMD_ROTATE, Math.PI / 8.0,
+        GFX.CMD_CALL, 27,
+        GFX.CMD_RESTORE,
+        GFX.CMD_RET
+    ];
+    var cmd_arr = GFX.encode_array(gfx_test_cmds(0, 128, 128));
+    var off = video.input_data.ds.fields['input'].offset;
+    video.write(off, cmd_arr);
+    off += cmd_arr.byteLength;
+    video.write(off, GFX.encode_array(call_cmds));
+    
+    video.input_data.swap = cmd_arr.byteLength + 1;
+    // trip the write callbacks
+    video.write(video.input_data.ds.fields['swap'].offset, cmd_arr.byteLength + 1);
+    
+    return video;
+}
+
+if((typeof(window) != 'undefined' && !window['VM']) ||
+   (typeof(global) != 'undefined' && !global['VM'])) {
+    VM = {};
+}
+if(typeof(VM.Devices) == 'undefined') {
+    VM.Devices = {};
+}
+VM.Devices.GFX = GFX;
 
 if(typeof(module) != 'undefined') {
 	module.exports = GFX;

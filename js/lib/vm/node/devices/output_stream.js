@@ -129,6 +129,8 @@ OutputStream.prototype.step = function()
     this.flush();
   }
 */
+
+  return false;
 }
 
 if(typeof(module) != 'undefined') {

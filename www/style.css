@@ -35,6 +35,10 @@ table tr:nth-child(even) {
 table tr:nth-child(odd) {
     background: #fee;
 }
+table tr.current, table tr.current td {
+    background: #ffe;
+}
+
 .implemented {
     font-weight: bold;
     color: green;
@@ -45,4 +49,3 @@ table tr:nth-child(odd) {
 .doc TABLE {
     background: white;
 }
-

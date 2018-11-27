@@ -9,7 +9,7 @@ const Timer = require('vm/devices/timer.js');
 var vm, cpu, keyboard;
 var main_window, second_window;
 
-function runner_init(width, height, load_offset, mem_size)
+function runner_init(width, height, load_offset, mem_size, callbacks)
 {
   if(mem_size == null) {
     mem_size = 8 * 1024 * 1024;
@@ -33,6 +33,9 @@ function runner_init(width, height, load_offset, mem_size)
     second_window.width = width;
     second_window.height = height;
 
+    var vm = new VM.Container(callbacks);
+    if(typeof(window) != 'undefined') window.vm = vm;
+
     mmu = new VM.MMU();
   	//cpu = new VM.CPU(mmu, 1<<16);
   //mmu.map_memory(0, 0x2, new RAM(0x2));
@@ -43,7 +46,7 @@ function runner_init(width, height, load_offset, mem_size)
 
     var keyboard_irq = VM.CPU.INTERRUPTS.user;
     var keyboard_addr = 0xF0004000;
-    keyboard = new Keyboard(window, cpu, keyboard_irq);
+    keyboard = new Keyboard(window, vm, keyboard_irq);
     mmu.map_memory(keyboard_addr, keyboard.ram_size(), keyboard);
     
     var devcon = new Console();
@@ -60,12 +63,9 @@ function runner_init(width, height, load_offset, mem_size)
 
     var timer_addr = 0xF0002000;
     var timer_irq = VM.CPU.INTERRUPTS.user + 2;
-    var timer = new Timer(cpu, timer_irq, 1<<20);
+    var timer = new Timer(vm, timer_irq, 1<<20);
     mmu.map_memory(timer_addr, timer.ram_size(), timer);
     
-    var vm = new VM.Container();
-    if(typeof(window) != 'undefined') window.vm = vm;
-
     vm.add_device(mmu)
         .add_device(cpu)
         .add_device(devcon)
