@@ -53,9 +53,14 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     var devcon_addr = 0xF0001000;
     mmu.map_memory(devcon_addr, devcon.ram_size(), devcon);
 
+  var unscii_font = new Image();
+  unscii_font.src = "images/unscii-16.png";
+  var unscii8_font = new Image();
+  unscii8_font.src = "images/unscii-8.png";
+  
     var gfx_mem_size = 16*1024;
     var gfx_irq = VM.CPU.INTERRUPTS.user + 1;
-    video = new GFX(cpu, gfx_irq, [ main_window, second_window ], width, height, gfx_mem_size);
+    video = new GFX(vm, gfx_irq, [ main_window, second_window ], width, height, gfx_mem_size, width, height, [ unscii_font, unscii8_font ]);
     var gfx_addr = 0xF0010000;
     var gfx_input_addr = gfx_addr + video.input_struct.fields['input'].offset;
     gfx_swap_addr = gfx_addr + video.input_struct.fields['swap'].offset;
