@@ -72,6 +72,17 @@ PagedHash.prototype.set_value = function(addr)
   this.get(addr).value = value;
 }
 
+PagedHash.prototype.range_for = function(value)
+{
+  for(var i in this.ranges) {
+    if(this.ranges[i].value == value) {
+      return this.ranges[i];
+    }
+  }
+
+  return null;
+}
+
 PagedHash.prototype.add_page_table_entries = function(item)
 {
   var page = this.page_for_address(item.addr);

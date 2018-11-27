@@ -106,11 +106,11 @@ function binary_op_type(ins, unsig)
 {
     var i;
     if(typeof(ins) == 'number') {
-      i = (ins & 0x4) >> 2;
-      unsig = (ins & 0x1) || unsig;
+        i = (ins & 0x4) >> 2;
+        unsig = (ins & 0x1) || unsig;
     } else {
-      i = ins.type;
-      unsig = ins.unsigned || unsig;
+        i = ins.type;
+        unsig = ins.unsigned || unsig;
     }
     return i == 1 ? VM.TYPES.FLOAT : (unsig ? VM.TYPES.ULONG : VM.TYPES.LONG);
 }
@@ -200,144 +200,144 @@ function math_ops(suffix)
                   }
               }
 
-			        vm.regwrite('status', s);
+			  vm.regwrite('status', s);
           },
           [
               // unsigned
               function(vm, ins) {
                   if(ins != VM.CPU.INS.CMPI) return;
                   
-	                // cmp: equal
-	                vm.regwrite(2, 123);
-	                vm.regwrite(1, 123);
-	                vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets the zero status flag');
+	              // cmp: equal
+	              vm.regwrite(2, 123);
+	              vm.regwrite(1, 123);
+	              vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets the zero status flag');
 
                   // cmp: less than
-	                vm.reset();
-	                vm.regwrite(2, 123);
-	                vm.regwrite(1, 12);
-	                vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & VM.CPU.STATUS.CARRY, 'sets the carry status flag');
+	              vm.reset();
+	              vm.regwrite(2, 123);
+	              vm.regwrite(1, 12);
+	              vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & VM.CPU.STATUS.CARRY, 'sets the carry status flag');
 
                   // cmp: greater than
-	                vm.reset();
-	                vm.regwrite(1, 123);
-	                vm.regwrite(2, 12);
-	                vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.equal(vm.regread('status') & (VM.CPU.STATUS.CARRY|VM.CPU.STATUS.ZERO), 0, 'sets no flags');
+	              vm.reset();
+	              vm.regwrite(1, 123);
+	              vm.regwrite(2, 12);
+	              vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.equal(vm.regread('status') & (VM.CPU.STATUS.CARRY|VM.CPU.STATUS.ZERO), 0, 'sets no flags');
 
                   // cmp: int & INS
-	                vm.reset();
-	                vm.regwrite(1, 0);
-	                vm.memwrite(0, vm.encode({op: ins, x: 1, y: VM.CPU.REGISTERS.INS}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets zero flag since 0 == 0');
+	              vm.reset();
+	              vm.regwrite(1, 0);
+	              vm.memwrite(0, vm.encode({op: ins, x: 1, y: VM.CPU.REGISTERS.INS}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets zero flag since 0 == 0');
 
-	                vm.reset();
-	                vm.regwrite(1, 0);
-	                vm.memwrite(0, vm.encode({op: ins, x: VM.CPU.REGISTERS.INS, y: 1}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets zero flag since 0 == 0');
+	              vm.reset();
+	              vm.regwrite(1, 0);
+	              vm.memwrite(0, vm.encode({op: ins, x: VM.CPU.REGISTERS.INS, y: 1}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets zero flag since 0 == 0');
               },
               // signed
               function(vm, ins) {
                   if(ins != VM.CPU.INS.CMPI) return;
                   
-	                // cmp: equal
-	                vm.regwrite(2, -123);
-	                vm.regwrite(1, -123);
-	                vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets the zero status flag');
+	              // cmp: equal
+	              vm.regwrite(2, -123);
+	              vm.regwrite(1, -123);
+	              vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets the zero status flag');
 
                   // cmp: less than
-	                vm.reset();
-	                vm.regwrite(1, -123);
-	                vm.regwrite(2, 12);
-	                vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & VM.CPU.STATUS.NEGATIVE, 'sets the negative status flag');
+	              vm.reset();
+	              vm.regwrite(1, -123);
+	              vm.regwrite(2, 12);
+	              vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & VM.CPU.STATUS.NEGATIVE, 'sets the negative status flag');
 
                   // cmp: greater than
-	                vm.reset();
-	                vm.regwrite(1, 123);
-	                vm.regwrite(2, -12);
-	                vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.equal(vm.regread('status') & (VM.CPU.STATUS.NEGATIVE|VM.CPU.STATUS.ZERO), 0, 'sets no status flag');
+	              vm.reset();
+	              vm.regwrite(1, 123);
+	              vm.regwrite(2, -12);
+	              vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.equal(vm.regread('status') & (VM.CPU.STATUS.NEGATIVE|VM.CPU.STATUS.ZERO), 0, 'sets no status flag');
               },
               // floats
               function(vm, ins) {
                   if(ins != VM.CPU.INS.CMPF) return;
                   
-	                // cmp: equal
-	                vm.regwritef(2, 123.45);
-	                vm.regwritef(1, 123.45);
-	                vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets the zero status flag');
+	              // cmp: equal
+	              vm.regwritef(2, 123.45);
+	              vm.regwritef(1, 123.45);
+	              vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & VM.CPU.STATUS.ZERO, 'sets the zero status flag');
 
                   // cmp: less than
-	                vm.reset();
-	                vm.regwrite(2, 123.45);
-	                vm.regwrite(1, 12.45);
-	                vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert(vm.regread('status') & (VM.CPU.STATUS.NEGATIVE|VM.CPU.STATUS.CARRY), 'sets the negative and carry status flags');
+	              vm.reset();
+	              vm.regwrite(2, 123.45);
+	              vm.regwrite(1, 12.45);
+	              vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert(vm.regread('status') & (VM.CPU.STATUS.NEGATIVE|VM.CPU.STATUS.CARRY), 'sets the negative and carry status flags');
 
                   // cmp: greater than
-	                vm.reset();
-	                vm.regwrite(2, 12.45);
-	                vm.regwrite(1, 123.45);
-	                vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.equal(vm.regread('status'), 0, 'clears the flags');
+	              vm.reset();
+	              vm.regwrite(2, 12.45);
+	              vm.regwrite(1, 123.45);
+	              vm.memwrite(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.equal(vm.regread('status'), 0, 'clears the flags');
 
-	                // cmp: not equal
-	                vm.regwritef(2, 123.34);
-	                vm.regwritef(1, 123.44);
-	                vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.equal((vm.regread('status') & VM.CPU.STATUS.ZERO), 0, 'does not set the zero status flag');
+	              // cmp: not equal
+	              vm.regwritef(2, 123.34);
+	              vm.regwritef(1, 123.44);
+	              vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.equal((vm.regread('status') & VM.CPU.STATUS.ZERO), 0, 'does not set the zero status flag');
 
-	                // cmp: NaN
-	                vm.regwritef(2, 123.34);
-	                vm.regwritef(1, NaN);
-	                vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR), 'sets the error status flag');
+	              // cmp: NaN
+	              vm.regwritef(2, 123.34);
+	              vm.regwritef(1, NaN);
+	              vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR), 'sets the error status flag');
 
-	                vm.regwritef(1, 123.34);
-	                vm.regwritef(2, NaN);
-	                vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR), 'sets the error status flag');
+	              vm.regwritef(1, 123.34);
+	              vm.regwritef(2, NaN);
+	              vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR), 'sets the error status flag');
 
-	                vm.regwritef(1, NaN);
-	                vm.regwritef(2, NaN);
-	                vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
-	                vm.regwrite('ip', 0);
-	                vm.step();
-	                assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR), 'sets the error status flag');
-	                assert.assert((vm.regread('status') & VM.CPU.STATUS.ZERO), 'sets the zero status flag');
+	              vm.regwritef(1, NaN);
+	              vm.regwritef(2, NaN);
+	              vm.memwritel(0, vm.encode({op: ins, x: 1, y: 2}));
+	              vm.regwrite('ip', 0);
+	              vm.step();
+	              assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR), 'sets the error status flag');
+	              assert.assert((vm.regread('status') & VM.CPU.STATUS.ZERO), 'sets the zero status flag');
               }
           ]
         ],
@@ -520,10 +520,10 @@ function math_ops(suffix)
                   vm.regwrite(reg, 0x2, type);
                   vm.step();
                   if(type == VM.TYPES.LONG || type == VM.TYPES.ULONG) {
-                    assert.assert(vm.regread('accum', type) == Math.pow(0x8000000, 2) % (0xFFFFFFFF + 1), "R0 is squared and overflown " + vm.regread('accum', type));
-                    assert.assert(vm.regread('status') & VM.CPU.STATUS.ERROR, "sets the error bit");
+                      assert.assert(vm.regread('accum', type) == Math.pow(0x8000000, 2) % (0xFFFFFFFF + 1), "R0 is squared and overflown " + vm.regread('accum', type));
+                      assert.assert(vm.regread('status') & VM.CPU.STATUS.ERROR, "sets the error bit");
                   } else if(type == VM.TYPES.FLOAT) {
-                    assert.assert(vm.regread('accum', type) == Math.pow(0x8000000, 2), "R0 is squared " + vm.regread('accum', type));
+                      assert.assert(vm.regread('accum', type) == Math.pow(0x8000000, 2), "R0 is squared " + vm.regread('accum', type));
                   }
               }
           }
@@ -531,91 +531,91 @@ function math_ops(suffix)
         [ "FFS" + suffix, "Finds the first one in X.",
           VM.CPU.INS_MOP_MASK,
           function(vm, ins) {
-            var type = binary_op_type(ins);
-            var b = vm.regread(ins.x, VM.TYPES.ULONG);
+              var type = binary_op_type(ins);
+              var b = vm.regread(ins.x, VM.TYPES.ULONG);
 
-            if(type == VM.TYPES.FLOAT) {
-              vm.interrupt(VM.CPU.INTERRUPTS.unknown_op);
-            } else {
-              if(b == 0) {
-                vm.regwrite('accum', 32, type);
+              if(type == VM.TYPES.FLOAT) {
+                  vm.interrupt(VM.CPU.INTERRUPTS.unknown_op);
               } else {
-                // See https://en.wikipedia.org/wiki/Find_first_set
-                var n = 0;
-                if((b & 0xFFFF0000) == 0) {
-                  n += 16;
-                  b = b << 16;
-                }
-                if((b & 0xFF000000) == 0) {
-                  n += 8;
-                  b = b << 8;
-                }
-                if((b & 0xF0000000) == 0) {
-                  n += 4;
-                  b = b << 4;
-                }
-                if((b & 0xC0000000) == 0) {
-                  n += 2;
-                  b = b << 2;
-                }
-                if((b & 0x80000000) == 0) {
-                  n += 1;
-                }
+                  if(b == 0) {
+                      vm.regwrite('accum', 32, type);
+                  } else {
+                      // See https://en.wikipedia.org/wiki/Find_first_set
+                      var n = 0;
+                      if((b & 0xFFFF0000) == 0) {
+                          n += 16;
+                          b = b << 16;
+                      }
+                      if((b & 0xFF000000) == 0) {
+                          n += 8;
+                          b = b << 8;
+                      }
+                      if((b & 0xF0000000) == 0) {
+                          n += 4;
+                          b = b << 4;
+                      }
+                      if((b & 0xC0000000) == 0) {
+                          n += 2;
+                          b = b << 2;
+                      }
+                      if((b & 0x80000000) == 0) {
+                          n += 1;
+                      }
 
-                vm.regwrite('accum', n, VM.TYPES.ULONG);
+                      vm.regwrite('accum', n, VM.TYPES.ULONG);
+                  }
               }
-            }
           },
           function(vm, ins) {
-            var type = binary_op_type(ins);
-            
-            // causes an unknown op interrupt for floats
-            if(type == VM.TYPES.FLOAT) {
-              assert.equal(vm._pending_interrupts.length, 0, 'has a no pending interrupt');
-              vm._pending_interrupts = [];
-              vm.keep_running = true; // step() doesn't enable this like run()
-	            vm.memwritel(0, vm.encode({op: ins, x: 1}));
-	            vm.memwritel(VM.CPU.REGISTER_SIZE, vm.encode({op: VM.CPU.INS.NOP}));
-	            vm.regwrite('ip', 0);
-              vm.regwrite('sp', 0x10);
-              vm.regwrite('isr', 0x100);
-              vm.enable_interrupts();
-	            vm.step();
-	            vm.step();
+              var type = binary_op_type(ins);
+              
+              // causes an unknown op interrupt for floats
+              if(type == VM.TYPES.FLOAT) {
+                  assert.equal(vm._pending_interrupts.length, 0, 'has a no pending interrupt');
+                  vm._pending_interrupts = [];
+                  vm.keep_running = true; // step() doesn't enable this like run()
+	              vm.memwritel(0, vm.encode({op: ins, x: 1}));
+	              vm.memwritel(VM.CPU.REGISTER_SIZE, vm.encode({op: VM.CPU.INS.NOP}));
+	              vm.regwrite('ip', 0);
+                  vm.regwrite('sp', 0x10);
+                  vm.regwrite('isr', 0x100);
+                  vm.enable_interrupts();
+	              vm.step();
+	              vm.step();
 
-              assert.assert(vm.regread('sp') == 0x10 - 8, 'pushed IP: ' + vm.memreadl(vm.regread('sp')));
-              assert.assert(vm.regread('ip') == 0x100 + VM.CPU.INTERRUPTS.unknown_op * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE, 'sets IP to 0x100 + 12*ISR_BYTE_SIZE: ' + vm.regread('ip').toString(16));
-            } else {
-              for(var reg = 1; reg < VM.CPU.REGISTERS.GP_COUNT; reg++) {
-                vm.reset();
-                vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                vm.regwrite('accum', 0x2, type);
-                vm.regwrite(reg, 0x0, type);
-                vm.step();
-                assert.assert(vm.regread('accum', type) == 32, "R0 has number of leading zeros in 0 " + vm.regread('accum', type));
+                  assert.assert(vm.regread('sp') == 0x10 - 8, 'pushed IP: ' + vm.memreadl(vm.regread('sp')));
+                  assert.assert(vm.regread('ip') == 0x100 + VM.CPU.INTERRUPTS.unknown_op * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE, 'sets IP to 0x100 + 12*ISR_BYTE_SIZE: ' + vm.regread('ip').toString(16));
+              } else {
+                  for(var reg = 1; reg < VM.CPU.REGISTERS.GP_COUNT; reg++) {
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', 0x2, type);
+                      vm.regwrite(reg, 0x0, type);
+                      vm.step();
+                      assert.assert(vm.regread('accum', type) == 32, "R0 has number of leading zeros in 0 " + vm.regread('accum', type));
 
-                vm.reset();
-                vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                vm.regwrite('accum', 0x2, type);
-                vm.regwrite(reg, 0x3, type);
-                vm.step();
-                assert.assert(vm.regread('accum', type) == 30, "R0 has number of leading zeros in 0x3 " + vm.regread('accum', type));
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', 0x2, type);
+                      vm.regwrite(reg, 0x3, type);
+                      vm.step();
+                      assert.assert(vm.regread('accum', type) == 30, "R0 has number of leading zeros in 0x3 " + vm.regread('accum', type));
 
-                vm.reset();
-                vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                vm.regwrite('accum', 0x2, type);
-                vm.regwrite(reg, 0x8000000, type);
-                vm.step();
-                assert.assert(vm.regread('accum', type) == 4, "R0 has the number of leading zeros in 0x80000000 " + vm.regread('accum', type));
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', 0x2, type);
+                      vm.regwrite(reg, 0x8000000, type);
+                      vm.step();
+                      assert.assert(vm.regread('accum', type) == 4, "R0 has the number of leading zeros in 0x80000000 " + vm.regread('accum', type));
 
-                vm.reset();
-                vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                vm.regwrite('accum', 0x2, type);
-                vm.regwrite(reg, 0xFFFFFFFF, type);
-                vm.step();
-                assert.assert(vm.regread('accum', type) == 0, "R0 has the number of leading zeros in 0xFFFFFFFF " + vm.regread('accum', type));
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', 0x2, type);
+                      vm.regwrite(reg, 0xFFFFFFFF, type);
+                      vm.step();
+                      assert.assert(vm.regread('accum', type) == 0, "R0 has the number of leading zeros in 0xFFFFFFFF " + vm.regread('accum', type));
+                  }
               }
-            }
           }
         ],
         [ "CEIL", "Round Y up to the nearest integer and store it in X.",
@@ -700,34 +700,34 @@ function math_ops(suffix)
                       assert.assert(vm.regread('status') & VM.CPU.STATUS.ERROR, "sets the error bit");
                   }
               },
-            function(vm, ins) {
-              if(ins != VM.CPU.INS.MODU) return;
-              
-              for(var reg = 1; reg < VM.CPU.REGISTERS.GP_COUNT; reg++) {
-                vm.reset();
-                vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                vm.regwrite('accum', 0x10);
-                vm.regwrite(reg, 0x3);
-                vm.step();
-                assert.assert(vm.regread('accum') == 1, "R0 has 10%3 stored in it " + vm.regread('accum'));
+              function(vm, ins) {
+                  if(ins != VM.CPU.INS.MODU) return;
+                  
+                  for(var reg = 1; reg < VM.CPU.REGISTERS.GP_COUNT; reg++) {
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', 0x10);
+                      vm.regwrite(reg, 0x3);
+                      vm.step();
+                      assert.assert(vm.regread('accum') == 1, "R0 has 10%3 stored in it " + vm.regread('accum'));
 
-                vm.reset();
-                vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                vm.regwrite('accum', 0x8000);
-                vm.regwrite(reg, 0x0);
-                vm.step();
-                assert.equal(vm.regread('accum'), 0x8000, 'left R0 untouched');
-                assert.assert(vm.regread('status') & VM.CPU.STATUS.ERROR, "sets the error bit");
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', 0x8000);
+                      vm.regwrite(reg, 0x0);
+                      vm.step();
+                      assert.equal(vm.regread('accum'), 0x8000, 'left R0 untouched');
+                      assert.assert(vm.regread('status') & VM.CPU.STATUS.ERROR, "sets the error bit");
 
-                vm.reset();
-                vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                vm.regwrite('accum', 0xFFFF);
-                vm.regwrite(reg, 0x4);
-                vm.step();
-                assert.equal(vm.regread('accum'), (0xFFFF % 4), 'stores 0xFFFF % 0x4 into R0');
-                assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR) == 0, "clears the error bit");
-              }
-            },
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', 0xFFFF);
+                      vm.regwrite(reg, 0x4);
+                      vm.step();
+                      assert.equal(vm.regread('accum'), (0xFFFF % 4), 'stores 0xFFFF % 0x4 into R0');
+                      assert.assert((vm.regread('status') & VM.CPU.STATUS.ERROR) == 0, "clears the error bit");
+                  }
+              },
               function(vm, ins) {
                   if(ins != VM.CPU.INS.MODF) return;
                   
@@ -821,7 +821,7 @@ function math_ops(suffix)
           },
           function(vm, ins) {
               var type = binary_op_type(ins);
-            
+              
               for(var reg = 1; reg < VM.CPU.REGISTERS.GP_COUNT; reg++) {
                   vm.reset();
                   vm.memwritel(0, vm.encode({op: ins, x: reg}));
@@ -851,13 +851,13 @@ function math_ops(suffix)
                       vm.step();
                       assert.assert(vm.regread('accum', type) == (0xF000 / 4), 'can divide unsigned numbers');
                   } else if(type == VM.TYPES.FLOAT) {
-                    // negative test
-                    vm.reset();
-                    vm.memwritel(0, vm.encode({op: ins, x: reg}));
-                    vm.regwrite('accum', -10, type);
-                    vm.regwrite(reg, 2, type);
-                    vm.step();
-                    assert.assert(vm.regread('accum', type) == -5, 'can divide negative numbers');
+                      // negative test
+                      vm.reset();
+                      vm.memwritel(0, vm.encode({op: ins, x: reg}));
+                      vm.regwrite('accum', -10, type);
+                      vm.regwrite(reg, 2, type);
+                      vm.step();
+                      assert.assert(vm.regread('accum', type) == -5, 'can divide negative numbers');
                   }
               }
           }
@@ -1011,10 +1011,10 @@ VM.CPU.INS_DEFS = [
         function(vm, ins) {
         },
         function(vm, ins) {
-	          vm.memwrite(0, [ VM.CPU.INS.NOP, 0, 0, 0 ]);
-	          vm.regwrite('ip', 0);
-	          vm.step();
-	          assert.assert(vm.regread('ip') == VM.CPU.INSTRUCTION_SIZE, 'ip advances');
+	        vm.memwrite(0, [ VM.CPU.INS.NOP, 0, 0, 0 ]);
+	        vm.regwrite('ip', 0);
+	        vm.step();
+	        assert.assert(vm.regread('ip') == VM.CPU.INSTRUCTION_SIZE, 'ip advances');
         }
       ],
       [ "NOT", "Store the negated bits of Y into X.",
@@ -1190,7 +1190,7 @@ VM.CPU.INS_DEFS = [
           type: [ 0xF000, 12 ]
         },
         function(vm, ins) {
-          vm.regwrite(VM.CPU.REGISTERS.ACCUM, -vm.regread(ins.reg, ins.type), ins.type);
+            vm.regwrite(VM.CPU.REGISTERS.ACCUM, -vm.regread(ins.reg, ins.type), ins.type);
         },
         [
             function(vm, ins) {
@@ -1478,25 +1478,27 @@ VM.CPU.INS_DEFS = [
     [ "LOAD", "Load the whole register DEST with data from memory at the address found in REG + OFFSET, the following " + VM.CPU.REGISTER_SIZE + " bytes. If REG is STATUS then OFFSET is used directly. When REG is INS, then the value is used as is. Except when IP is loaded, IP is always advanced past the OFFSET.",
       [ [ 'dest', [ 0xF0, 4 ] ],
         [ 'condition', [ 0xF00, 8 ] ],
-        [ 'reg', [ 0xF000, 12 ] ]
+        [ 'reg', [ 0xF000, 12 ] ],
+        [ 'data', VM.TYPES.ULONG ]
       ],
       function(vm, ins) {
-          var ip = vm.regread('ip');
+          let ip = vm.regread('ip');
           if(vm.check_condition(ins.condition)) {
-              var offset = 0;
+              let offset = 0;
               if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
                   offset = vm.regread(ins.reg);
                   offset += vm.memreadl(ip);
               } else {
                   offset += vm.memreadL(ip);
               }
-              var value = 0;
+              
+              let value = 0;
               if(ins.reg == VM.CPU.REGISTERS.INS) {
                   value = offset;
               } else {
                   value = vm.memreadL(offset);
               }
-			        vm.regwrite(ins.dest, value);
+			  vm.regwrite(ins.dest, value);
 
               if(ins.dest != VM.CPU.REGISTERS.IP) {
                   vm.regwrite('ip', ip + VM.CPU.REGISTER_SIZE);
@@ -1508,62 +1510,62 @@ VM.CPU.INS_DEFS = [
       [
           function(vm, ins) {
               var reg = (ins & 0xF0) >> 4;
-	            vm.memwritel(0, vm.encode({op: ins, reg: 2}));
+	          vm.memwritel(0, vm.encode({op: ins, reg: 2}));
               vm.memwritel(VM.CPU.INSTRUCTION_SIZE, 0x30);
-	            vm.memwrite(0x80, [ 0x44, 0x22 ]);
-	            vm.regwrite(reg, 999);
+	          vm.memwrite(0x80, [ 0x44, 0x22 ]);
+	          vm.regwrite(reg, 999);
               vm.regwrite(2, 0x50);
-	            vm.regwrite('ip', 0);
-	            vm.step();
-	            assert.assert(vm.regread(reg) == 0x2244, 'loads a value from memory into the register');
+	          vm.regwrite('ip', 0);
+	          vm.step();
+	          assert.assert(vm.regread(reg) == 0x2244, 'loads a value from memory into the register');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
           },
           function(vm, ins) {
               // to the status register
               var reg = (ins & 0xF0) >> 4;
-	            vm.memwriteS(0, vm.encode({op: ins, reg: VM.CPU.REGISTERS.STATUS}));
+	          vm.memwriteS(0, vm.encode({op: ins, reg: VM.CPU.REGISTERS.STATUS}));
               vm.memwritel(VM.CPU.INSTRUCTION_SIZE, 0x30);
-	            vm.memwrite(0x80, [ 0x44, 0x22, 0, 0 ]);
-	            vm.memwrite(0x30, [ 0x88, 0x99, 0, 0 ]);
-	            vm.regwrite(reg, 999);
+	          vm.memwrite(0x80, [ 0x44, 0x22, 0, 0 ]);
+	          vm.memwrite(0x30, [ 0x88, 0x99, 0, 0 ]);
+	          vm.regwrite(reg, 999);
               vm.regwrite(2, 0x50);
-	            vm.regwrite('ip', 0);
-	            vm.step();
-	            assert.equal(vm.regread(reg), 0x9988, 'loads into the register a value from memory with offseting from the status register');
+	          vm.regwrite('ip', 0);
+	          vm.step();
+	          assert.equal(vm.regread(reg), 0x9988, 'loads into the register a value from memory with offseting from the status register');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
           },
           function(vm, ins) {
               // to the INS register
               var reg = (ins & 0xF0) >> 4;
-	            vm.memwritel(0, vm.encode({op: ins, reg: VM.CPU.REGISTERS.INS}));
+	          vm.memwritel(0, vm.encode({op: ins, reg: VM.CPU.REGISTERS.INS}));
               vm.memwritel(VM.CPU.INSTRUCTION_SIZE, 0x30);
-	            vm.memwrite(0x80, [ 0x44, 0x22 ]);
-	            vm.memwrite(0x30, [ 0x88, 0x99 ]);
-	            vm.regwrite(reg, 999);
+	          vm.memwrite(0x80, [ 0x44, 0x22 ]);
+	          vm.memwrite(0x30, [ 0x88, 0x99 ]);
+	          vm.regwrite(reg, 999);
               vm.regwrite(2, 0x50);
-	            vm.regwrite('ip', 0);
-	            vm.step();
-	            assert.assert(vm.regread(reg) == 0x30, 'loads into the register the value');
+	          vm.regwrite('ip', 0);
+	          vm.step();
+	          assert.assert(vm.regread(reg) == 0x30, 'loads into the register the value');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
           },
           function(vm, ins) {
               // with a condition
               var reg = (ins & 0xF0) >> 4;
-	            vm.memwritel(0, vm.encode({op: ins, condition: VM.CPU.STATUS.NEGATIVE, reg: 2}));
+	          vm.memwritel(0, vm.encode({op: ins, condition: VM.CPU.STATUS.NEGATIVE, reg: 2}));
               vm.memwritel(VM.CPU.INSTRUCTION_SIZE, 0x30);
-	            vm.memwrite(0x80, [ 0x44, 0x22 ]);
+	          vm.memwrite(0x80, [ 0x44, 0x22 ]);
               vm.clear_status(VM.CPU.STATUS.NEGATIVE);
-	            vm.regwrite(reg, 999);
+	          vm.regwrite(reg, 999);
               vm.regwrite(2, 0x50);
-	            vm.regwrite('ip', 0);
-	            vm.step();
-	            assert.assert(vm.regread(reg) != 0x2244, 'does not load a value from memory into the register');
+	          vm.regwrite('ip', 0);
+	          vm.step();
+	          assert.assert(vm.regread(reg) != 0x2244, 'does not load a value from memory into the register');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
 
               vm.regwrite('ip', 0);
               vm.set_status(VM.CPU.STATUS.NEGATIVE);
               vm.step();
-	            assert.assert(vm.regread(reg) == 0x2244, 'loads a value from memory into the register');
+	          assert.assert(vm.regread(reg) == 0x2244, 'loads a value from memory into the register');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
           }
       ]
@@ -1578,17 +1580,17 @@ VM.CPU.INS_DEFS = [
           var reg = (ins & 0xF0) >> 4;
           vm.regwrite(0, 0x1234);
           vm.regwrite('sp', vm.stack_start - 1);
-	        vm.memwritel(0, vm.encode({op: VM.CPU.INS.PUSH, src: 0}));
-	        vm.memwritel(VM.CPU.INSTRUCTION_SIZE, vm.encode({op: ins, dest: reg}));
-	        vm.regwrite('ip', 0);
-	        vm.step();
+	      vm.memwritel(0, vm.encode({op: VM.CPU.INS.PUSH, src: 0}));
+	      vm.memwritel(VM.CPU.INSTRUCTION_SIZE, vm.encode({op: ins, dest: reg}));
+	      vm.regwrite('ip', 0);
+	      vm.step();
           vm.regwrite(0, 0);
-	        vm.step();
+	      vm.step();
           if(reg == VM.CPU.REGISTERS.SP) {
-	            assert.assert(vm.regread(reg) == 0x1234, 'stores the values from memory to R' + reg + ' ' + vm.regread(reg).toString(16));
+	          assert.assert(vm.regread(reg) == 0x1234, 'stores the values from memory to R' + reg + ' ' + vm.regread(reg).toString(16));
           } else {
-	            assert.equal(vm.regread('sp'), vm.stack_start - 1, "increments the stack pointer");
-	            assert.equal(vm.regread(reg), 0x1234, 'stores the values from memory to R' + reg + ' ' + vm.regread(reg).toString(16));
+	          assert.equal(vm.regread('sp'), vm.stack_start - 1, "increments the stack pointer");
+	          assert.equal(vm.regread(reg), 0x1234, 'stores the values from memory to R' + reg + ' ' + vm.regread(reg).toString(16));
           }
       }            
     ],
@@ -1758,14 +1760,14 @@ VM.CPU.INS_DEFS = [
           [ 'reg', [ 0xF00, 8 ] ]
         ],
         function(vm, ins) {
-          var ip = vm.regread('ip');
-          var offset = vm.regread(ins.offset);
-          if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
-            offset = vm.regread(ins.reg) + offset;
-          }
+            let ip = vm.regread('ip');
+            let offset = vm.regread(ins.offset);
+            if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
+                offset = vm.regread(ins.reg) + offset;
+            }
 
-          vm.push('ip');
-          vm.regwrite('ip', offset);
+            vm.push('ip');
+            vm.regwrite('ip', offset);
         },
         [
             function(vm, ins) {
@@ -1964,34 +1966,34 @@ VM.CPU.INS_DEFS = [
           // address in register
           function(vm, ins) {
               var reg = (ins & 0xF0) >> 4;
-	            vm.memwritel(0, vm.encode({op: ins, src: reg, reg: reg == 1 ? 3 : 1 }));
+	          vm.memwritel(0, vm.encode({op: ins, src: reg, reg: reg == 1 ? 3 : 1 }));
               vm.memwritel(VM.CPU.INSTRUCTION_SIZE, 0x30);
-	            vm.memwrite(0x80, [ 0x44, 0x22 ]);
-	            vm.regwrite(reg, 999);
+	          vm.memwrite(0x80, [ 0x44, 0x22 ]);
+	          vm.regwrite(reg, 999);
               vm.regwrite(reg == 1 ? 3 : 1, 0x50);
-	            vm.regwrite('ip', 0);
-	            vm.step();
-	            assert.assert(vm.memreadl(0x80) == 999, 'stores the registers value to memory');
+	          vm.regwrite('ip', 0);
+	          vm.step();
+	          assert.assert(vm.memreadl(0x80) == 999, 'stores the registers value to memory');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
           },
           // conditioned
           function(vm, ins) {
               var reg = (ins & 0xF0) >> 4;
-	            vm.memwritel(0, vm.encode({op: ins, src: reg, reg: reg == 1 ? 3 : 1, condition: VM.CPU.STATUS.NEGATIVE }));
+	          vm.memwritel(0, vm.encode({op: ins, src: reg, reg: reg == 1 ? 3 : 1, condition: VM.CPU.STATUS.NEGATIVE }));
               vm.memwritel(VM.CPU.INSTRUCTION_SIZE, 0x30);
-	            vm.memwrite(0x80, [ 0x44, 0x22 ]);
-	            vm.regwrite(reg, 999);
+	          vm.memwrite(0x80, [ 0x44, 0x22 ]);
+	          vm.regwrite(reg, 999);
               vm.regwrite(reg == 1 ? 3 : 1, 0x50);
-	            vm.regwrite('ip', 0);
+	          vm.regwrite('ip', 0);
               vm.clear_status(VM.CPU.STATUS.NEGATIVE);
-	            vm.step();
-	            assert.assert(vm.memreadl(0x80) != 999, 'does not store the registers value to memory');
+	          vm.step();
+	          assert.assert(vm.memreadl(0x80) != 999, 'does not store the registers value to memory');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
 
-	            vm.regwrite('ip', 0);
+	          vm.regwrite('ip', 0);
               vm.set_status(VM.CPU.STATUS.NEGATIVE);
-	            vm.step();
-	            assert.assert(vm.memreadl(0x80) == 999, 'stores the registers value to memory');
+	          vm.step();
+	          assert.assert(vm.memreadl(0x80) == 999, 'stores the registers value to memory');
               assert.equal(vm.regread('ip'), VM.CPU.INSTRUCTION_SIZE + VM.CPU.REGISTER_SIZE, 'increased IP');
           }          
       ]
@@ -2004,12 +2006,12 @@ VM.CPU.INS_DEFS = [
       },
       function(vm, ins) {
           var reg = (ins & 0xF0) >> 4;
-	        vm.memwritel(0, vm.encode({op: ins, src: reg}));
-	        vm.regwrite(reg, 123);
-	        vm.regwrite('ip', 0);
-	        vm.step();
-	        assert.assert(vm.regread('sp') == vm.stack_start - 4, "decrements the stack pointer");
-	        assert.assert(vm.memreadl(vm.stack_start - 4, 4) == 123, 'writes to memory at SP');
+	      vm.memwritel(0, vm.encode({op: ins, src: reg}));
+	      vm.regwrite(reg, 123);
+	      vm.regwrite('ip', 0);
+	      vm.step();
+	      assert.assert(vm.regread('sp') == vm.stack_start - 4, "decrements the stack pointer");
+	      assert.assert(vm.memreadl(vm.stack_start - 4, 4) == 123, 'writes to memory at SP');
       }
     ],
     // 0xF

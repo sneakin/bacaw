@@ -1,5 +1,5 @@
 #!/bin/env node
-// -*- mode: JavaScript; coding: utf-8-unix -*-
+// -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 4 -*-
 
 var vm_debugging = process.env['DEBUG'] == '1';
 
