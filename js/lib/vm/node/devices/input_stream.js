@@ -84,12 +84,25 @@ InputStream.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
+InputStream.prototype.read1 = function(addr, type)
+{
+    return this.ram.read1(addr, type);
+}
+
 InputStream.prototype.write = function(addr, data)
 {
   this.ram.write(addr, data);
   if(addr == this.data.ds.fields['ready'].offset && this.data.ready == 0) {
     this.read_more();
   }
+}
+
+InputStream.prototype.write1 = function(addr, value, type)
+{
+    this.ram.write1(addr, value, type);
+    if(addr == this.data.ds.fields['ready'].offset && this.data.ready == 0) {
+        this.read_more();
+    }
 }
 
 InputStream.prototype.step = function()

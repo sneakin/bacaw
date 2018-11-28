@@ -1,3 +1,5 @@
+"use strict";
+
 const util = require('util.js');
 
 if((typeof(window) != 'undefined' && !window['VM']) ||
@@ -20,12 +22,14 @@ VM.Type = function(name, id, js_name, min, max)
 
 VM.Type.prototype.get = function(dv, offset, endian)
 {
-    return dv[this.array_getter](offset, endian || true);
+    if(endian == null) endian = true;
+    return dv[this.array_getter](offset, endian);
 }
 
 VM.Type.prototype.set = function(dv, offset, value, endian)
 {
-    return dv[this.array_setter](offset, value, endian || true);
+    if(endian == null) endian = true;
+    return dv[this.array_setter](offset, value, true);
 }
 
 VM.Type.prototype.proxy = function(buffer, offset, length)

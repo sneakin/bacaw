@@ -8,8 +8,6 @@ const InstructionDisplay = require('dev/instruction_display');
 const DeviceList = require('dev/device_list');
 const DevConDisplay = require('dev/dev_con_display');
 
-const ValueArray = require('value_array');
-
 const LOAD_OFFSET = 0;
 
 function dev_init()
@@ -56,8 +54,10 @@ function dev_init()
         device_list.update(vm);
         inst_display.update();
         memory_display.update();
-        
-        update_timer = requestAnimationFrame(updater);
+
+        if(!window.stop_timer) {
+            update_timer = requestAnimationFrame(updater);
+        }
     }
 
     updater();
@@ -102,6 +102,14 @@ function dev_init()
     var reload = document.getElementById('reload-button');
     reload.onclick = function() {
         vm.cpu.memwrite(LOAD_OFFSET, program_code);
+    };
+
+    var update_page = document.getElementById('update-page-checkbox');
+    update_page.onchange = function() {
+        window.stop_timer = !update_page.checked;
+        if(update_page.checked) {
+            updater();
+        }
     };
 }
 

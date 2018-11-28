@@ -52,12 +52,26 @@ Console.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
+Console.prototype.read1 = function(addr, type)
+{
+    return this.ram.read1(addr, type);
+}
+
 Console.prototype.write = function(addr, data)
 {
   this.ram.write(addr, data);
   if(addr == this.data.ds.fields['flush'].offset) {
     this.flush();
   }
+}
+
+Console.prototype.write1 = function(addr, type)
+{
+    var n = this.ram.write1(addr, type);
+    if(addr == this.data.ds.fields['flush'].offset) {
+        this.flush();
+    }
+    return n;
 }
 
 Console.prototype.step = function(s)

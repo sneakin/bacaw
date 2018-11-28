@@ -1,3 +1,5 @@
+"use strict";
+    
 if((typeof(window) != 'undefined' && !window['VM']) ||
    (typeof(global) != 'undefined' && !global['VM'])) {
     VM = {};

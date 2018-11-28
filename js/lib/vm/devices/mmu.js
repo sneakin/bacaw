@@ -1,3 +1,5 @@
+"use strict";
+
 const RangedHash = require('vm/ranged_hash.js');
 const PagedHash = require('paged_hash.js');
 
@@ -40,6 +42,8 @@ VM.MMU.prototype.start_address_for = function(dev)
 
 VM.MMU.prototype.memread = function(addr, count)
 {
+    if(this.debug) console.log("MMU read", addr, typeof(count) == 'number', count);
+    
     if(typeof(count) == "number") {
         var buffer = new Uint8Array(count);
         var a;
@@ -65,19 +69,26 @@ VM.MMU.prototype.memread = function(addr, count)
     }
 }
 
+VM.MMU.prototype.memread1 = function(addr, type)
+{
+    var mem = this.memory_map.get(addr);
+    if(mem == null) throw new VM.MMU.NotMappedError(addr);
+    return mem.value.read1(addr - mem.addr, type);
+}
+
 VM.MMU.prototype.memreadl = function(addr)
 {
-    return this.memread(addr, VM.TYPES.LONG);
+    return this.memread1(addr, VM.TYPES.LONG);
 }
 
 VM.MMU.prototype.memreadL = function(addr)
 {
-    return this.memread(addr, VM.TYPES.ULONG);
+    return this.memread1(addr, VM.TYPES.ULONG);
 }
 
 VM.MMU.prototype.memreadS = function(addr)
 {
-    return this.memread(addr, VM.TYPES.USHORT);
+    return this.memread1(addr, VM.TYPES.USHORT);
 }
 
 VM.MMU.prototype.memwrite = function(addr, data, type)
@@ -106,22 +117,29 @@ VM.MMU.prototype.memwrite = function(addr, data, type)
     }
 }
 
+VM.MMU.prototype.memwrite1 = function(addr, value, type)
+{
+    var mem = this.memory_map.get(addr);
+    if(mem == null) throw new VM.MMU.NotMappedError(addr);
+    return mem.value.write1(addr - mem.addr, value, type);
+}
+
 VM.MMU.prototype.memwritel = function(addr, n)
 {
-    return this.memwrite(addr, n, VM.TYPES.LONG);
+    return this.memwrite1(addr, n, VM.TYPES.LONG);
 }
 
 VM.MMU.prototype.memwriteL = function(addr, n)
 {
-    return this.memwrite(addr, n, VM.TYPES.ULONG);
+    return this.memwrite1(addr, n, VM.TYPES.ULONG);
 }
 
 VM.MMU.prototype.memwrites = function(addr, n)
 {
-    return this.memwrite(addr, n, VM.TYPES.SHORT);
+    return this.memwrite1(addr, n, VM.TYPES.SHORT);
 }
 
 VM.MMU.prototype.memwriteS = function(addr, n)
 {
-    return this.memwrite(addr, n, VM.TYPES.USHORT);
+    return this.memwrite1(addr, n, VM.TYPES.USHORT);
 }

@@ -1,3 +1,5 @@
+"use strict";
+
 const Enum = require('enum.js');
 const DataStruct = require('data_struct.js');
 const RangedHash = require('vm/ranged_hash.js');
@@ -503,6 +505,15 @@ GFX.prototype.read = function(addr, count, output, offset)
     }
 }
 
+GFX.prototype.read1 = function(addr, type)
+{
+    if(addr < this.input_ram.length) {
+        return this.input_ram.read1(addr, type);
+    } else {
+        return this.pixel_buffer.read1(addr - this.input_ram.length, type);
+    }
+}
+
 GFX.prototype.write = function(addr, data)
 {
     var n;
@@ -517,6 +528,22 @@ GFX.prototype.write = function(addr, data)
 
     return n;
 }
+
+GFX.prototype.write1 = function(addr, value, type)
+{
+    var n;
+    if(addr < this.input_ram.length) {
+        n = this.input_ram.write1(addr, value, type);
+        if(addr == this.input_struct.fields.swap.offset) {
+            this.swap_buffers();
+        }
+    } else {
+        n = this.pixel_buffer.write1(addr - this.input_ram.length, value, type);
+    }
+
+    return n;
+}
+
 
 GFX.prototype.write_error = function(err, offset)
 {

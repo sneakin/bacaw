@@ -1,11 +1,9 @@
 function RAM(amount)
 {
     if(typeof(amount) == 'number') {
-        this.length = amount;
-        this._data = new Uint8Array(amount);
+        this.set_data(new Uint8Array(amount));
     } else {
-        this._data = amount;
-        this.length = amount.length;
+        this.set_data(amount);
     }
 }
 
@@ -13,11 +11,29 @@ RAM.prototype.set_data = function(arr)
 {
   this._data = arr;
   this.length = arr.length;
+  this._view = this.data_view();
 }
 
 RAM.prototype.data_view = function(offset)
 {
     return new DataView(this._data.buffer, this._data.byteOffset + (offset || 0));
+}
+
+RAM.prototype.read1 = function(addr, type)
+{
+    if(type == null) type = VM.TYPES.ULONG;
+    else if(typeof(type) == 'string') type = VM.TYPES[count];
+
+    return type.get(this._view, addr, true);
+}
+
+RAM.prototype.write1 = function(addr, value, type)
+{
+    if(type == null) type = VM.TYPES.ULONG;
+    else if(typeof(type) == 'string') type = VM.TYPES[count];
+
+    type.set(this._view, addr, value, true);
+    return addr + type.byte_size;
 }
 
 RAM.prototype.read = function(addr, count, output, offset)

@@ -96,6 +96,11 @@ OutputStream.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
+OutputStream.prototype.read1 = function(addr, type)
+{
+    return this.ram.read1(addr, type);
+}
+
 OutputStream.prototype.write = function(addr, data)
 {
   var n = this.ram.write(addr, data);
@@ -106,6 +111,18 @@ OutputStream.prototype.write = function(addr, data)
   }
 
   return n;
+}
+
+OutputStream.prototype.write1 = function(addr, data, type)
+{
+    var n = this.ram.write1(addr, data, type);
+    if(addr == this.data.ds.fields['flush'].offset && this.data.flush > 0) {
+        this.flush();
+    } else if(addr == this.data.ds.fields['cmd'].offset) {
+        this.process_cmd();
+    }
+
+    return n;
 }
 
 OutputStream.prototype.process_cmd = function()

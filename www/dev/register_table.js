@@ -37,8 +37,15 @@ RegisterTable.prototype.update = function(vm)
         elements[0].innerText = value.toString(16);
 
         if(i == VM.CPU.REGISTERS.INS) {
-            var ins = vm.cpu.decode(value);
-            var text = " " + ins.name;
+            var text;
+            try {
+                var ins = vm.cpu.decode(value);
+                text = " " + ins.name;
+            } catch(e) {
+                text = "Error";
+                console.log("Exception", e, value, vm.cpu.regread(VM.CPU.REGISTERS.IP));
+            }
+            
             elements[1].innerText = text;
         } else if(i == VM.CPU.REGISTERS.STATUS) {
             var text = "";

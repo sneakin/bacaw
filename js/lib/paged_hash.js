@@ -34,7 +34,7 @@ PagedHash.Range = function(n, addr, size, value)
 
 PagedHash.prototype.add = function(addr, size, value)
 {
-  if(this.get(addr)) throw PagedHash.AlreadyMappedError(addr);
+  if(this.get(addr)) throw new PagedHash.AlreadyMappedError(addr);
   var range = new PagedHash.Range(this.ranges.length, addr, size, value);
   this.ranges.push(range);
   this.add_page_table_entries(range);
