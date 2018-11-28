@@ -5,6 +5,7 @@ const Keyboard = require('vm/devices/keyboard.js');
 const Console = require('vm/devices/console.js');
 const GFX = require('vm/devices/gfx.js');
 const Timer = require('vm/devices/timer.js');
+const RTC = require('vm/devices/rtc.js');
 
 var vm, cpu, keyboard;
 var main_window, second_window;
@@ -70,13 +71,18 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     var timer_irq = VM.CPU.INTERRUPTS.user + 2;
     var timer = new Timer(vm, timer_irq, 1<<20);
     mmu.map_memory(timer_addr, timer.ram_size(), timer);
+
+    var rtc_addr = 0xF0005000;
+    var rtc = new RTC();
+    mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
     
     vm.add_device(mmu)
-        .add_device(cpu)
-        .add_device(devcon)
-        .add_device(keyboard)
-        .add_device(video)
-      .add_device(timer);
+          .add_device(cpu)
+          .add_device(devcon)
+          .add_device(keyboard)
+          .add_device(video)
+          .add_device(timer)
+          .add_device(rtc);
 
   vm.info = {
     gfx: {
@@ -97,6 +103,9 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     timer: {
       addr: timer_addr,
       irq: timer_irq
+    },
+    rtc: {
+      addr: rtc_addr
     }
   };
   
