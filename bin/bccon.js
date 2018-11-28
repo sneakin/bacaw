@@ -8,6 +8,7 @@ const LOAD_OFFSET = 1024;
 require('vm');
 const RAM = require('vm/devices/ram');
 const Timer = require('vm/devices/timer');
+const RTC = require('vm/devices/rtc');
 const DevConsole = require('vm/devices/console');
 const OutputStream = require('vm/node/devices/output_stream');
 const InputStream = require('vm/node/devices/input_stream');
@@ -39,18 +40,25 @@ function vm_init(ram_size)
     var timer = new Timer(vm, timer_irq, 1<<20);
     mmu.map_memory(timer_addr, timer.ram_size(), timer);
 
+    var rtc_addr = 0xF0005000;
+    var rtc = new RTC();
+    mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
+
     vm.add_device(mmu)
           .add_device(cpu)
           .add_device(devcon)
           .add_device(output)
           .add_device(input)
-          .add_device(timer);
+          .add_device(timer)
+          .add_device(rtc);
 
 	vm.info = {
 		keyboard_addr: input_addr,
 		keyboard_irq: input_irq,
 		timer_addr: timer_addr,
 		timer_irq: timer_irq,
+		rtc_addr: rtc_addr,
+		rtc_irq: rtc_irq,
         input_irq: input_irq,
         output_irq: output_irq
 	};
