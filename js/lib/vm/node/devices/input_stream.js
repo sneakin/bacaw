@@ -47,7 +47,7 @@ InputStream.prototype.trigger_interrupt = function()
 
 InputStream.prototype.read_more = function()
 {
-  var data = process.stdin.read(this.data.buffer.length);
+  var data = this.stream.read(this.data.buffer.length);
   if(this.debug) {
     console.log("InputStream", this.data.eos, this.data.ready, "Read ", data);
   }
