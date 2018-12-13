@@ -1,3 +1,5 @@
+"use strict";
+
 var REQUIRED_SCRIPTS = [];
 
 if(false || typeof(global) == 'undefined') {

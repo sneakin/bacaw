@@ -1,3 +1,5 @@
+"use strict";
+
 const Enum = require('enum.js');
 const DataStruct = require('data_struct.js');
 const RAM = require('vm/devices/ram.js');

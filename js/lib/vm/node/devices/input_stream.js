@@ -1,3 +1,5 @@
+"use strict";
+
 const DataStruct = require('data_struct.js');
 const RAM = require('vm/devices/ram.js');
 const RingBuffer = require('vm/ring_buffer.js');

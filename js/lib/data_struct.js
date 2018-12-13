@@ -1,3 +1,5 @@
+"use strict";
+
 const util = require('util.js');
 
 function DataStruct(fields, little_endian, alignment)

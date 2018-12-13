@@ -122,9 +122,9 @@ function binary_op_type(ins, unsig)
 function binary_op_inner(vm, ins, f, status_updater) {
     var type = binary_op_type(ins);
     var a = vm.regread(REGISTERS.ACCUM, type);
-    var x = vm.regread(ins.x, type);
-    var carry = vm.regread(ins.carry_in, type);
-    if(ins.carry_in == VM.CPU.REGISTERS.STATUS) {
+    var x = vm.regread(this.un.x(ins), type);
+    var carry = vm.regread(this.un.carry_in(ins), type);
+    if(this.un.carry_in(ins) == VM.CPU.REGISTERS.STATUS) {
         carry = carry & VM.CPU.STATUS.CARRY;
     }
     var result = f(a, x, carry);
@@ -140,7 +140,7 @@ function binary_op_inner(vm, ins, f, status_updater) {
 function binary_op(f, status_updater)
 {
     return function(vm, ins) {
-        return binary_op_inner(vm, ins, f, status_updater);
+        return binary_op_inner.call(this, vm, ins, f, status_updater);
     };
 }
 
@@ -155,12 +155,12 @@ function math_ops(suffix)
           function(vm, ins) {
               var type = binary_op_type(ins);
               var a = 0;
-              if(ins.x != VM.CPU.REGISTERS.INS) {
-                  a = vm.regread(ins.x, type);
+              if(this.un.x(ins) != VM.CPU.REGISTERS.INS) {
+                  a = vm.regread(this.un.x(ins), type);
               }
               var b = 0;
-              if(ins.y != VM.CPU.REGISTERS.INS) {
-                  b = vm.regread(ins.y, type);
+              if(this.un.y(ins) != VM.CPU.REGISTERS.INS) {
+                  b = vm.regread(this.un.y(ins), type);
               }
               var s = vm.regread(REGISTERS.STATUS);
               if(a == b || (type == VM.TYPES.FLOAT && isNaN(a) && isNaN(b))) {
@@ -183,12 +183,12 @@ function math_ops(suffix)
 
               if(type == VM.TYPES.ULONG || type == VM.TYPES.LONG) {
                   var signed_a = 0;
-                  if(ins.x != VM.CPU.REGISTERS.INS) {
-                      signed_a = vm.regread(ins.x, VM.TYPES.ULONG);
+                  if(this.un.x(ins) != VM.CPU.REGISTERS.INS) {
+                      signed_a = vm.regread(this.un.x(ins), VM.TYPES.ULONG);
                   }
                   var signed_b = 0;
-                  if(ins.y != VM.CPU.REGISTERS.INS) {
-                      signed_b = vm.regread(ins.y, VM.TYPES.ULONG);
+                  if(this.un.y(ins) != VM.CPU.REGISTERS.INS) {
+                      signed_b = vm.regread(this.un.y(ins), VM.TYPES.ULONG);
                   }
 
                   if(signed_a < signed_b) {
@@ -536,7 +536,7 @@ function math_ops(suffix)
           VM.CPU.INS_MOP_MASK,
           function(vm, ins) {
               var type = binary_op_type(ins);
-              var b = vm.regread(ins.x, VM.TYPES.ULONG);
+              var b = vm.regread(this.un.x(ins), VM.TYPES.ULONG);
 
               if(type == VM.TYPES.FLOAT) {
                   vm.interrupt(VM.CPU.INTERRUPTS.unknown_op);
@@ -627,7 +627,7 @@ function math_ops(suffix)
             [ 'dest', [ 0xF000, 12  ] ]
           ],
           function(vm, ins) {
-              vm.regwrite(ins.dest, Math.ceil(vm.regread(ins.src, VM.TYPES.FLOAT)), VM.TYPES.FLOAT);
+              vm.regwrite(this.un.dest(ins), Math.ceil(vm.regread(this.un.src(ins), VM.TYPES.FLOAT)), VM.TYPES.FLOAT);
           },
           function(vm, ins) {
               vm.memwritel(0, vm.encode({op: ins, src: 1, dest: 2}));
@@ -648,7 +648,7 @@ function math_ops(suffix)
             [ 'dest', [ 0xF000, 12  ] ]
           ],
           function(vm, ins) {
-              vm.regwrite(ins.dest, Math.round(vm.regread(ins.src, VM.TYPES.FLOAT)), VM.TYPES.FLOAT);
+              vm.regwrite(this.un.dest(ins), Math.round(vm.regread(this.un.src(ins), VM.TYPES.FLOAT)), VM.TYPES.FLOAT);
           },
           function(vm, ins) {
               vm.memwritel(0, vm.encode({op: ins, src: 1, dest: 2}));
@@ -673,11 +673,11 @@ function math_ops(suffix)
         [ "MOD" + suffix, "Take the modulus of X by Y.",
           VM.CPU.INS_MOP_MASK,
           function(vm, ins) {
-              var denom = vm.regread(ins.x);
+              var denom = vm.regread(this.un.x(ins));
               var type = binary_op_type(ins);
 
               if(denom > 0 || type == VM.TYPES.FLOAT) {
-                  binary_op_inner(vm, ins, function(a, b) { return a % b; });
+                  binary_op_inner.call(this, vm, ins, function(a, b) { return a % b; });
                   vm.clear_status(VM.CPU.STATUS.ERROR);
               } else {
                   vm.set_status(VM.CPU.STATUS.ERROR);
@@ -814,10 +814,10 @@ function math_ops(suffix)
         [ "DIV" + suffix, "Divide X by Y storing the result into ACCUM.",
           VM.CPU.INS_MOP_MASK,
           function(vm, ins) {
-              var denom = vm.regread(ins.x);
+              var denom = vm.regread(this.un.x(ins));
               var type = binary_op_type(ins);
               if(denom != 0 || type == VM.TYPES.FLOAT) {
-                  binary_op_inner(vm, ins, function(a, b) { return a / b; });
+                  binary_op_inner.call(this, vm, ins, function(a, b) { return a / b; });
                   vm.clear_status(VM.CPU.STATUS.ERROR);
               } else {
                   vm.set_status(VM.CPU.STATUS.ERROR);
@@ -872,50 +872,49 @@ function math_ops(suffix)
             [ 'type', [ 0x4, 2 ] ]
           ],
           function(vm, ins) {
-              var type_out = VM.TYPES[ins.type_out];
+              var type_out = VM.TYPES[this.un.type_out(ins)];
               var type_in = binary_op_type(ins);
-              if(type_in != VM.TYPES.FLOAT && ins.unsigned == 0) {
-                  type_in = VM.TYPES.LONG;
-              }
-
-              var v = vm.regread(ins.reg, type_in);
+              var v = vm.regread(this.un.reg(ins), type_in);
               var status = 0;
               if(v > type_out.max) {
                   status = status | VM.CPU.STATUS.ERROR;
               } else if(v < type_out.min) {
                   status = status | VM.CPU.STATUS.ERROR | VM.CPU.STATUS.NEGATIVE;
               } else {
-                  vm.regwrite(ins.reg, v, type_out);
+                  vm.regwrite(this.un.reg(ins), v, type_out);
               }
 
               vm.set_status(status);
           },
           [
               // from integers
+              // signed
               function(vm, ins) {
                   if(ins != VM.CPU.INS.CONVI) return;
 
-                  // unsigned
-                  vm.memwritel(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.FLOAT, unsigned: 1}));
-                  vm.regwrite(1, 1234);
-                  vm.step();
-                  assert.not_equal(vm.regread(1, VM.TYPES.ULONG), 1234, 'no longer a ulong');
-                  assert.equal(vm.regread(1, VM.TYPES.FLOAT), 1234.0, 'converts to a float');
-
-                  // signed
                   vm.reset();
-                  vm.memwritel(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.FLOAT, unsigned: 0}));
+                  vm.memwritel(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.FLOAT}));
                   vm.regwrite(1, -1234);
                   vm.step();
                   assert.not_equal(vm.regread(1, VM.TYPES.ULONG), -1234, 'no longer a long');
                   assert.equal(vm.regread(1, VM.TYPES.FLOAT), -1234.0, 'converts to a float');
+              },
+              // unsigned
+              function(vm, ins) {
+                  if(ins != VM.CPU.INS.CONVU) return;
+
+                  vm.memwritel(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.FLOAT}));
+                  vm.regwrite(1, 1234);
+                  vm.step();
+                  assert.not_equal(vm.regread(1, VM.TYPES.ULONG), 1234, 'no longer a ulong');
+                  assert.equal(vm.regread(1, VM.TYPES.FLOAT), 1234.0, 'converts to a float');
               },
               // from floats
               function(vm, ins) {
                   if(ins != VM.CPU.INS.CONVF) return;
                   
                   // to signed
-                  vm.memwritel(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.LONG, unsigned: 0}));
+                  vm.memwriteS(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.LONG, unsigned: 0}));
                   vm.regwritef(1, -1234.45);
                   vm.step();
                   assert.not_equal(vm.regread(1, VM.TYPES.FLOAT), -1234.45, 'no longer a float');
@@ -923,7 +922,7 @@ function math_ops(suffix)
 
                   // to unsigned
                   vm.reset();
-                  vm.memwritel(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.ULONG, unsigned: 1}));
+                  vm.memwriteS(0, vm.encode({op: ins, reg: 1, type_out: VM.TYPE_IDS.ULONG, unsigned: 1}));
                   vm.regwritef(1, -1234.45);
                   vm.step();
                   assert.assert(Math.abs(vm.regread(1, VM.TYPES.FLOAT) - -1234.45) < 0.001, 'stays the same');
@@ -986,7 +985,7 @@ function math_ops(suffix)
             [ 'dest', [ 0xF000, 12  ] ]
           ],
           function(vm, ins) {
-              vm.regwrite(ins.dest, Math.floor(vm.regread(ins.src, VM.TYPES.FLOAT)), VM.TYPES.FLOAT);
+              vm.regwrite(this.un.dest(ins), Math.floor(vm.regread(this.un.src(ins), VM.TYPES.FLOAT)), VM.TYPES.FLOAT);
           },
           function(vm, ins) {
               vm.memwritel(0, vm.encode({op: ins, src: 1, dest: 2}));
@@ -1026,7 +1025,7 @@ VM.CPU.INS_DEFS = [
           [ 'y', [ 0xF000, 12  ]]
         ],
         function(vm, ins) {
-            vm.regwrite(ins.x, ~vm.regread(ins.y));
+            vm.regwrite(this.un.x(ins), ~vm.regread(this.un.y(ins)));
         },
         function(vm, ins) {
             vm.memwrite(0, [ VM.CPU.INS.NOT, 1, 0, 0, ]);
@@ -1039,7 +1038,7 @@ VM.CPU.INS_DEFS = [
       [ "OR", "Place a bitwise inclusive disjunction of X and Y into DEST.",
         VM.CPU.INS_BITOP_MASK,
         function(vm, ins) {
-            vm.regwrite(REGISTERS.ACCUM, vm.regread(REGISTERS.ACCUM) | vm.regread(ins.x));
+            vm.regwrite(REGISTERS.ACCUM, vm.regread(REGISTERS.ACCUM) | vm.regread(this.un.x(ins)));
         },
         function(vm, ins) {
             vm.memwritel(0, vm.encode({op: VM.CPU.INS.OR, x: 1}));
@@ -1052,7 +1051,7 @@ VM.CPU.INS_DEFS = [
       [ "XOR", "Place a bitwise exclusive disjunction of X and Y into DEST.",
         VM.CPU.INS_BITOP_MASK,
         function(vm, ins) {
-            vm.regwrite(REGISTERS.ACCUM, vm.regread(REGISTERS.ACCUM) ^ vm.regread(ins.x));
+            vm.regwrite(REGISTERS.ACCUM, vm.regread(REGISTERS.ACCUM) ^ vm.regread(this.un.x(ins)));
         },
         function(vm, ins) {
             vm.memwritel(0, vm.encode({op: VM.CPU.INS.XOR, x: 1 }));
@@ -1065,7 +1064,7 @@ VM.CPU.INS_DEFS = [
       [ "AND", "Place a bitwise conjunction of X and Y into DEST.",
         VM.CPU.INS_BITOP_MASK,
         function(vm, ins) {
-            var value = vm.regread(REGISTERS.ACCUM) & vm.regread(ins.x);
+            var value = vm.regread(REGISTERS.ACCUM) & vm.regread(this.un.x(ins));
             vm.regwrite(REGISTERS.ACCUM, value);
             var status = 0;
             if(value == 0) {
@@ -1095,12 +1094,12 @@ VM.CPU.INS_DEFS = [
       [ "BSL", "Shift the bits in ACCUM left by X.",
         VM.CPU.INS_BITOP_MASK,
         function(vm, ins) {
-            var shift = vm.regread(ins.x);
+            var shift = vm.regread(this.un.x(ins));
             if(shift > 0) {
                 var x = vm.regread(REGISTERS.ACCUM);
                 var result = x << shift;
-                if(ins.carry_in != VM.CPU.REGISTERS.STATUS) {
-                    result = result | (vm.regread(ins.carry_in) >> (32 - shift));
+                if(this.un.carry_in(ins) != VM.CPU.REGISTERS.STATUS) {
+                    result = result | (vm.regread(this.un.carry_in(ins)) >> (32 - shift));
                 }
                 if(x & 0x80000000) {
                     vm.set_status(VM.CPU.STATUS.CARRY);
@@ -1141,7 +1140,7 @@ VM.CPU.INS_DEFS = [
         [ [ 'x', [ 0xFF00, 8  ] ]
         ],
         function(vm, ins) {
-            vm.interrupt(ins.x);
+            vm.interrupt(this.un.x(ins));
         },
         function(vm, ins) {
             assert.equal(vm._pending_interrupts.length, 0, 'has no pending interrupts');
@@ -1194,7 +1193,7 @@ VM.CPU.INS_DEFS = [
           type: [ 0xF000, 12 ]
         },
         function(vm, ins) {
-            vm.regwrite(VM.CPU.REGISTERS.ACCUM, -vm.regread(ins.reg, ins.type), ins.type);
+            vm.regwrite(VM.CPU.REGISTERS.ACCUM, -vm.regread(this.un.reg(ins), this.un.type(ins)), this.un.type(ins));
         },
         [
             function(vm, ins) {
@@ -1276,12 +1275,12 @@ VM.CPU.INS_DEFS = [
       [ "BSR", "Shift the bits in ACCUM right by X.",
         VM.CPU.INS_BITOP_MASK,
         function(vm, ins) {
-            var shift = vm.regread(ins.x);
+            var shift = vm.regread(this.un.x(ins));
             if(shift > 0) {
                 var x = vm.regread(REGISTERS.ACCUM);
                 var result = x >>> shift;
-                if(ins.carry_in != VM.CPU.REGISTERS.STATUS) {
-                    result = result | (vm.regread(ins.carry_in) & ((1<<shift) - 1)) << (32 - shift);
+                if(this.un.carry_in(ins) != VM.CPU.REGISTERS.STATUS) {
+                    result = result | (vm.regread(this.un.carry_in(ins)) & ((1<<shift) - 1)) << (32 - shift);
                 }
                 vm.regwrite(REGISTERS.ACCUM, result & 0xFFFFFFFF);
                 vm.regwrite(REGISTERS.CARRY, x & ((1<<shift) - 1));
@@ -1308,20 +1307,20 @@ VM.CPU.INS_DEFS = [
       [ "CLS", "Clear the status register's compare bits.",
         [ [ 'bits', [ 0xF00, 8 ] ] ],
         function(vm, ins) {
-            vm.clear_status(ins.bits);
+            vm.clear_status(this.un.bits(ins));
         },
         function(vm, ins) {
-            vm.set_status(ins.bits);
+            vm.set_status(this.un.bits(ins));
             vm.memwritel(0, vm.encode({op: ins}));
             vm.step();
-            assert.assert((vm.regread(REGISTERS.STATUS) & ins.bits) == 0, 'clears the bits');
+            assert.assert((vm.regread(REGISTERS.STATUS) & this.un.bits(ins)) == 0, 'clears the bits');
         }
       ],
       [ "INTR", "Cause an interrupt with the register providing the interrupt number.",
         [ [ 'x', [ 0x0F00, 8  ] ]
         ],
         function(vm, ins) {
-            vm.interrupt(vm.regread(ins.x));
+            vm.interrupt(vm.regread(this.un.x(ins)));
         },
         function(vm, ins) {
             assert.equal(vm._pending_interrupts.length, 0, 'has no pending interrupts');
@@ -1371,18 +1370,18 @@ VM.CPU.INS_DEFS = [
       function(vm, ins) {
           var ip = vm.regread(REGISTERS.IP);
           
-          if(vm.check_condition(ins.condition)) {
+          if(vm.check_condition(this.un.condition(ins))) {
               var y = vm.memreadl(ip);
               
-              if(ins.kind != 0 && ins.kind != 7) {
+              if(this.un.kind(ins) != 0 && this.un.kind(ins) != 7) {
                   y = vm.memreadl(vm.regread(REGISTERS.IP) + y);
               }
-              if(ins.kind == 6) {
+              if(this.un.kind(ins) == 6) {
                   y = vm.memreadl(y);
               }
 
-              var result = vm.regread(ins.x) + y;
-              vm.regwrite(ins.x, result);
+              var result = vm.regread(this.un.x(ins)) + y;
+              vm.regwrite(this.un.x(ins), result);
 
               if(result > 0xFFFFFFFF) {
                   vm.set_status(VM.CPU.STATUS.ERROR);
@@ -1392,7 +1391,7 @@ VM.CPU.INS_DEFS = [
                   vm.clear_status(VM.CPU.STATUS.CARRY);
               }
               
-              if(ins.x != VM.CPU.REGISTERS.IP) {
+              if(this.un.x(ins) != VM.CPU.REGISTERS.IP) {
                   vm.regwrite(REGISTERS.IP, ip + VM.CPU.REGISTER_SIZE);
               }
           } else {
@@ -1487,24 +1486,24 @@ VM.CPU.INS_DEFS = [
       ],
       function(vm, ins) {
           let ip = vm.regread(REGISTERS.IP);
-          if(vm.check_condition(ins.condition)) {
+          if(vm.check_condition(this.un.condition(ins))) {
               let offset = 0;
-              if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
-                  offset = vm.regread(ins.reg);
+              if(this.un.reg(ins) != VM.CPU.REGISTERS.STATUS && this.un.reg(ins) != VM.CPU.REGISTERS.INS) {
+                  offset = vm.regread(this.un.reg(ins));
                   offset += vm.memreadl(ip);
               } else {
                   offset += vm.memreadL(ip);
               }
               
               let value = 0;
-              if(ins.reg == VM.CPU.REGISTERS.INS) {
+              if(this.un.reg(ins) == VM.CPU.REGISTERS.INS) {
                   value = offset;
               } else {
                   value = vm.memreadL(offset);
               }
-			  vm.regwrite(ins.dest, value);
+			  vm.regwrite(this.un.dest(ins), value);
 
-              if(ins.dest != VM.CPU.REGISTERS.IP) {
+              if(this.un.dest(ins) != VM.CPU.REGISTERS.IP) {
                   vm.regwrite(REGISTERS.IP, ip + VM.CPU.REGISTER_SIZE);
               }
           } else {
@@ -1578,7 +1577,7 @@ VM.CPU.INS_DEFS = [
     [ "POP", "Pop a value from the stack into the register.",
       [ [ 'dest', [ 0xF0, 4 ] ] ],
       function(vm, ins) {
-          vm.pop(ins.dest);
+          vm.pop(this.un.dest(ins));
       },
       function(vm, ins) {
           var reg = (ins & 0xF0) >> 4;
@@ -1670,10 +1669,10 @@ VM.CPU.INS_DEFS = [
             let ip = vm.regread(REGISTERS.IP);
             vm.regwrite(REGISTERS.IP, ip + VM.CPU.REGISTER_SIZE);
             
-            if(vm.check_condition(ins.condition)) {
+            if(vm.check_condition(this.un.condition(ins))) {
                 let offset = vm.memreadl(ip);
-                if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
-                    offset = vm.regread(ins.reg) + offset;
+                if(this.un.reg(ins) != VM.CPU.REGISTERS.STATUS && this.un.reg(ins) != VM.CPU.REGISTERS.INS) {
+                    offset = vm.regread(this.un.reg(ins)) + offset;
                 }
                 vm.push_register(REGISTERS.IP);
                 vm.regwrite(REGISTERS.IP, offset);
@@ -1765,9 +1764,9 @@ VM.CPU.INS_DEFS = [
         ],
         function(vm, ins) {
             let ip = vm.regread(REGISTERS.IP);
-            let offset = vm.regread(ins.offset);
-            if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
-                offset = vm.regread(ins.reg) + offset;
+            let offset = vm.regread(this.un.offset(ins));
+            if(this.un.reg(ins) != VM.CPU.REGISTERS.STATUS && this.un.reg(ins) != VM.CPU.REGISTERS.INS) {
+                offset = vm.regread(this.un.reg(ins)) + offset;
             }
 
             vm.push_register(REGISTERS.IP);
@@ -1806,7 +1805,7 @@ VM.CPU.INS_DEFS = [
         [ 'src', [ 0xF00, 8 ] ]
       ],
       function(vm, ins) {
-		  vm.regwrite(ins.dest, vm.regread(ins.src));
+		  vm.regwrite(this.un.dest(ins), vm.regread(this.un.src(ins)));
       },
       function(vm, ins) {
           var reg = (ins & 0xF0) >> 4;
@@ -1830,18 +1829,18 @@ VM.CPU.INS_DEFS = [
       ],
       function(vm, ins) {
           var ip = vm.regread(REGISTERS.IP)
-          if(vm.check_condition(ins.condition)) {
+          if(vm.check_condition(this.un.condition(ins))) {
               var y = vm.memreadl(ip);
 
-              if(ins.kind != 0 && ins.kind != 7) {
+              if(this.un.kind(ins) != 0 && this.un.kind(ins) != 7) {
                   y = vm.memreadl(vm.regread(REGISTERS.IP) + y);
               }
-              if(ins.kind == 6) {
+              if(this.un.kind(ins) == 6) {
                   y = vm.memreadl(y);
               }
 
-              var result = vm.regread(ins.x) - y;
-              vm.regwrite(ins.x, result);
+              var result = vm.regread(this.un.x(ins)) - y;
+              vm.regwrite(this.un.x(ins), result);
 
               if(result < 0) {
                   vm.set_status(VM.CPU.STATUS.NEGATIVE);
@@ -1849,7 +1848,7 @@ VM.CPU.INS_DEFS = [
                   vm.clear_status(VM.CPU.STATUS.NEGATIVE);
               }
 
-              if(ins.x != VM.CPU.REGISTERS.IP) {
+              if(this.un.x(ins) != VM.CPU.REGISTERS.IP) {
                   vm.regwrite(REGISTERS.IP, ip + VM.CPU.REGISTER_SIZE);
               }
           } else {
@@ -1953,15 +1952,15 @@ VM.CPU.INS_DEFS = [
       ],
       function(vm, ins) {
           let ip = vm.regread(REGISTERS.IP);
-          if(vm.check_condition(ins.condition)) {
+          if(vm.check_condition(this.un.condition(ins))) {
               let offset = 0;
-              if(ins.reg != VM.CPU.REGISTERS.STATUS && ins.reg != VM.CPU.REGISTERS.INS) {
-                  offset = vm.regread(ins.reg);
+              if(this.un.reg(ins) != VM.CPU.REGISTERS.STATUS && this.un.reg(ins) != VM.CPU.REGISTERS.INS) {
+                  offset = vm.regread(this.un.reg(ins));
                   offset += vm.memreadl(ip);
               } else {
                   offset = vm.memreadL(ip);
               }
-              vm.memwritel(offset, vm.regread(ins.src));
+              vm.memwritel(offset, vm.regread(this.un.src(ins)));
           }
 
           vm.regwrite(REGISTERS.IP, ip + VM.CPU.REGISTER_SIZE);
@@ -2006,7 +2005,7 @@ VM.CPU.INS_DEFS = [
     [ "PUSH", "Pushes the specified register onto the stack.",
       [ [ 'src', [ 0x000000F0, 4 ] ] ],
       function(vm, ins) {
-          vm.push_register(ins.src);
+          vm.push_register(this.un.src(ins));
       },
       function(vm, ins) {
           var reg = (ins & 0xF0) >> 4;
@@ -2046,6 +2045,11 @@ VM.CPU.Instruction = function(op, name, doc, arg_masks, has_literal, impl, tests
     this.name = name;
     this.doc = doc;
     this.arg_masks = this.populate_argmasks(arg_masks);
+    this.un = util.map_each(this.arg_masks, function(name, mask) {
+        return function(ins) {
+            return mask.get(ins);
+        };
+    });
     this.has_literal = has_literal;
     this.byte_size = VM.TYPES.SHORT.byte_size + this.has_literal.byte_size;
     this.impl = impl;
@@ -2081,8 +2085,7 @@ VM.CPU.Instruction.prototype.populate_argmasks = function(arg_masks)
 
 VM.CPU.Instruction.prototype.call = function(vm, ins)
 {
-    var args = this.unmask(ins);
-    return this.impl(vm, args);
+    return this.impl(vm, ins);
 }
 
 VM.CPU.Instruction.prototype.unmask = function(ins)
