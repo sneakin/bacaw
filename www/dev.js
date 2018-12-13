@@ -10,6 +10,8 @@ const DevConDisplay = require('dev/dev_con_display');
 
 const LOAD_OFFSET = 0;
 
+const Terminal = require('vm/devices/terminal');
+
 function dev_init()
 {
     var running = false;
@@ -59,7 +61,7 @@ function dev_init()
             update_timer = requestAnimationFrame(updater);
         }
     }
-
+    
     updater();
 
     // Button logic
@@ -111,6 +113,18 @@ function dev_init()
             updater();
         }
     };
+
+    var term = new Terminal(document.getElementById('tty'), {
+        fontFamily: 'Inconsolata',
+        fontSize: 16
+    });
+    var input_term = term.get_input_device(1024, vm, VM.CPU.INTERRUPTS.user + 4);
+    vm.mmu.map_memory(0xF0004000, input_term.ram_size(), input_term);
+    vm.add_device(input_term);
+    
+    var output_term = term.get_output_device(1024, vm, VM.CPU.INTERRUPTS.user + 3);
+    vm.mmu.map_memory(0xF0003000, output_term.ram_size(), output_term);
+    vm.add_device(output_term);
 }
 
 if(typeof(window) != 'undefined') {

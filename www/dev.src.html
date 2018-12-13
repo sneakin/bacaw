@@ -5,23 +5,33 @@
     <style type="text/css">
       @import "style.css";
       @import "dev_style.css";
+      @import "xterm.css";
     </style>
     <script src="dev.js" type="text/javascript"></script>
 	</head>
 	<body onload="dev_init();">
-    <div class="vm-display med-res"><canvas id="second_window">Sorry</canvas><canvas id="main_window">Sorry</canvas>
+    <div class="horiz-bar">
+      <input type="button" value="Run" id="run-button"/>
+      <input type="button" value="Step" id="step-button"/>
+      <input type="button" value="Reset" id="reset-button"/>
+      <input type="button" value="Reload" id="reload-button"/>
+      <input type="file" value="Load" id="load-button"/>
+      <label for="update-page-checkbox">Update Page?</label>
+      <input type="checkbox" value="1" checked="1" id="update-page-checkbox"/>
+      <br/>
+    </div>
+    <div class="info">
+      <h1>Video</h1>
+      <div class="vm-display med-res"><canvas id="second_window">Sorry</canvas><canvas id="main_window">Sorry</canvas>
+      </div>
+    </div>
+    <div class="info">
+      <h1>TTY</h1>
+      <div class="vm-display">
+        <div id="tty"></div>
+      </div>
     </div>
     <div class="info cpu-info">
-      <div class="horiz-bar">
-        <input type="button" value="Run" id="run-button"/>
-        <input type="button" value="Step" id="step-button"/>
-        <input type="button" value="Reset" id="reset-button"/>
-        <input type="button" value="Reload" id="reload-button"/>
-        <input type="file" value="Load" id="load-button"/>
-        <label for="update-page-checkbox">Update Page?</label>
-        <input type="checkbox" value="1" checked="1" id="update-page-checkbox"/>
-        <br/>
-      </div>
       <h1>Info</h1>
       <div id="info">
         <dl>
@@ -35,8 +45,6 @@
           <dd id="info-time-per-frame">0</dd>
         </dl>
       </div>
-    </div>
-    <div class="info">
       <h1>Console</h1>
       <div id="console">
         <ul id="console-log"></ul>

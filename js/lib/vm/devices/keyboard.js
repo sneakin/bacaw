@@ -7,17 +7,17 @@ const RAM = require('vm/devices/ram.js');
 function Keyboard(el, vm, irq)
 {
   this.name = "Keyboard";
-  this.running = false;
-  this.element = el;
-  var self = this;
-	  this.element.onkeyup = function(ev) { return self.on_key(false, ev); };
-	  this.element.onkeydown = function(ev) { return self.on_key(true, ev); };
-
+    this.running = false;
+    this.focused = false;
+    this.element = el;
+    
     this.vm = vm;
     this.irq = irq;
     this.ram = new RAM(Keyboard.MemoryStruct_16.byte_size);
     this.mem = Keyboard.MemoryStruct_16.proxy(this.ram.data_view());
     this.buffer = new RingBuffer(Keyboard.MemoryStruct_16.fields.events.type, this.mem.events)
+
+    this.install_keyhandlers();
     this.reset();
 }
 
@@ -60,6 +60,30 @@ Keyboard.prototype.step = function()
 Keyboard.prototype.stop = function()
 {
   this.running = false;
+}
+
+Keyboard.prototype.install_keyhandlers = function()
+{
+    var self = this;
+
+    this.element.addEventListener('click', function(ev) {
+        if(self.element.classList.contains('focused') == false) {
+            if(self.debug) console.log("Keyboard device focused");
+            self.element.classList.add('focused');
+            self.focused = true;
+        }
+    });
+
+    document.body.addEventListener('click', function(ev) {
+        if(ev.target != self.element) {
+            if(self.debug) console.log("Keyboard device lost focus");
+            self.element.classList.remove('focused');
+            self.focused = false;
+        }
+    });
+    
+    window.onkeyup = function(ev) { if(self.focused) return self.on_key(false, ev); };
+    window.onkeydown = function(ev) { if(self.focused) return self.on_key(true, ev); };
 }
 
 Keyboard.prototype.encode_modifiers = function(pressed, ev)

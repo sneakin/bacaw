@@ -1,6 +1,6 @@
 body {
     /*font-family: "Unscii 16-full", "unifont", "Courier", "fixed";*/
-  font-family: "Inconsolata", "unifont", monospace;
+    font-family: "Inconsolata", "unifont", monospace;
 }
 
 .vm-display {
@@ -8,9 +8,18 @@ body {
     margin: 0.25em;
 }
 
+/*
+.vm-display, #tty {
+	  border: solid 4px #aaa;
+	  border-top: solid 4px #111;
+	  border-left: solid 4px #111;
+}
+*/
+
 .info {
     float: left;
     display: block;
+    /*height: 60ex;*/
 }
 
 .cpu-info {

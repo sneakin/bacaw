@@ -17,21 +17,29 @@ DeviceInfo.prototype.update = function(dev)
 function DeviceList(parent, vm)
 {
     this.elements = [];
-    
-    var list = document.createElement('dl');
-    parent.appendChild(list);
+    this.list = document.createElement('dl');
+    parent.appendChild(this.list);
 
     var self = this;
     vm.each_device(function(dev, n) {
-        addr = vm.mmu.start_address_for(dev);
-        self.elements[n] = new DeviceInfo(list, dev, addr);
+        self.add_device(vm, dev, n);
     });
+}
+
+DeviceList.prototype.add_device = function(vm, dev, n)
+{
+    addr = vm.mmu.start_address_for(dev);
+    this.elements[n] = new DeviceInfo(this.list, dev, addr);
 }
 
 DeviceList.prototype.update = function(vm)
 {
     var self = this;
     vm.each_device(function(dev, n) {
+        if(self.elements[n] == null) {
+            self.add_device(vm, dev, n);
+        }
+
         self.elements[n].update(dev);
     });
 }

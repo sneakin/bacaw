@@ -16,7 +16,8 @@ outputs = [ 'index.html',
             'runner_style.css',
             'dev_style.css',
             'images/unscii-8.png',
-            'images/unscii-16.png'
+            'images/unscii-16.png',
+            'xterm.css'
           ].collect do |src|
   buildroot.join(src)
 end
@@ -37,6 +38,10 @@ directory buildroot.join('images') => buildroot
   file output => [ src, buildroot, File.dirname(output) ] do |t|
     FileUtils.copy(t.sources[0], t.name)
   end
+end
+
+file buildroot.join('xterm.css') => root.join('node_modules', 'xterm', 'dist', 'xterm.css') do |t|
+  FileUtils.copy(t.sources[0], t.name)
 end
 
 BrowserifyRunner.root = root

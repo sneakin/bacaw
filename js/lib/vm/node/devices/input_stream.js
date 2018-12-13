@@ -49,23 +49,33 @@ InputStream.prototype.trigger_interrupt = function()
 
 InputStream.prototype.read_more = function()
 {
-  var data = this.stream.read(this.data.buffer.length);
+    var len = this.data.buffer.length;
+    if(this.stream._readableState) len = Math.min(this.stream._readableState.length, len);
+    if(this.stream.readableLength) len = Math.min(this.stream.readableLength(), len);
+    
+  var data = this.stream.read(Math.max(len, 1));
   if(this.debug) {
-    console.log("InputStream", this.data.eos, this.data.ready, "Read ", data);
+    console.log("InputStream", len, this.data.eos, this.data.ready, "Read ", data);
   }
 
-  if(data == null) {
-    this.data.ready = 0;
-  } else {
-    for(var i = 0; i < data.length; i++) {
-      this.data.buffer[i] = data[i];
+    if(data == null) {
+        this.data.ready = 0;
+        return false;
+    } else if(typeof(data) == 'string') {
+        for(var i = 0; i < data.length; i++) {
+            this.data.buffer[i] = data.charCodeAt(i);
+        }
+    } else {
+        for(var i = 0; i < data.length; i++) {
+            this.data.buffer[i] = data[i];
+        }
     }
 
     this.data.ready = data.length;
     this.data.eos = 0;
 
     this.trigger_interrupt();
-  }
+    return this;
 }
 
 InputStream.prototype.ram_size = function()

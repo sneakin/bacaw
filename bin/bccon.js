@@ -26,11 +26,11 @@ function vm_init(ram_size)
     var devcon = new DevConsole();
     mmu.map_memory(0xF0001000, devcon.ram_size(), devcon);
 
-    var output_irq = VM.CPU.INTERRUPTS.user;
+    var output_irq = VM.CPU.INTERRUPTS.user + 3;
     var output = new OutputStream(process.stdout, null, vm, output_irq);
     mmu.map_memory(0xF0003000, output.ram_size(), output);
 
-    var input_irq = VM.CPU.INTERRUPTS.user + 1;
+    var input_irq = VM.CPU.INTERRUPTS.user + 4;
     var input_addr = 0xF0004000;
     var input = new InputStream(process.stdin, null, vm, input_irq);
     mmu.map_memory(input_addr, input.ram_size(), input);
@@ -40,7 +40,7 @@ function vm_init(ram_size)
     var timer = new Timer(vm, timer_irq, 1<<20);
     mmu.map_memory(timer_addr, timer.ram_size(), timer);
 
-    var rtc_addr = 0xF0005000;
+    var rtc_addr = 0xF0006000;
     var rtc = new RTC();
     mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
 
@@ -58,7 +58,6 @@ function vm_init(ram_size)
 		timer_addr: timer_addr,
 		timer_irq: timer_irq,
 		rtc_addr: rtc_addr,
-		rtc_irq: rtc_irq,
         input_irq: input_irq,
         output_irq: output_irq
 	};

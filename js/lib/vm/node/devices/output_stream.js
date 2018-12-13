@@ -81,6 +81,7 @@ OutputStream.prototype.flush = function()
                             null,
                             function() {
                               if(self.data.flush > 0) {
+                                if(self.debug) console.log("OutputStream flushed");
                                 self.data.eos = OutputStream.EOSStates.OK;
                                 self.ram.set(0, self.ram.length, 0);
                                 self.trigger_interrupt();

@@ -45,9 +45,9 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
 	  cpu = new VM.CPU(mmu, mem_size);
     mmu.map_memory(4096, mem_size - 4096, new RAM(mem_size - 4096));
 
-    var keyboard_irq = VM.CPU.INTERRUPTS.user;
-    var keyboard_addr = 0xF0004000;
-    keyboard = new Keyboard(window, vm, keyboard_irq);
+    var keyboard_irq = VM.CPU.INTERRUPTS.user + 5;
+    var keyboard_addr = 0xF0005000;
+    keyboard = new Keyboard(main_window, vm, keyboard_irq);
     mmu.map_memory(keyboard_addr, keyboard.ram_size(), keyboard);
     
     var devcon = new Console();
@@ -60,7 +60,7 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
   unscii8_font.src = "images/unscii-8.png";
   
     var gfx_mem_size = 16*1024;
-    var gfx_irq = VM.CPU.INTERRUPTS.user + 1;
+    var gfx_irq = VM.CPU.INTERRUPTS.user + 16;
     video = new GFX(vm, gfx_irq, [ main_window, second_window ], width, height, gfx_mem_size, width, height, [ unscii_font, unscii8_font ]);
     var gfx_addr = 0xF0010000;
     var gfx_input_addr = gfx_addr + video.input_struct.fields['input'].offset;
@@ -72,7 +72,7 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     var timer = new Timer(vm, timer_irq, 1<<20);
     mmu.map_memory(timer_addr, timer.ram_size(), timer);
 
-    var rtc_addr = 0xF0005000;
+    var rtc_addr = 0xF0006000;
     var rtc = new RTC();
     mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
     
