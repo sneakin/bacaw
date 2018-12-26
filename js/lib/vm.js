@@ -12,6 +12,8 @@ require('vm/vm-c.js');
 require('vm/container.js');
 require('vm/devices.js');
 
+VM.Assembler = require('assembler');
+
 VM.run_tests = function()
 {
     for(let prop in this) {

@@ -71,15 +71,15 @@ VM.Container.prototype.schedule = function(all_asleep, cycles)
     if(!this.stopping) {
         if(this.timer == null) {
             var self = this;
-
+          
             if(all_asleep) {
-                if(this.debug) console.log("All asleep.");
+              if(this.debug) console.log("All asleep.");
             } else {
-                if(this.debug) console.log("set Timeout.");
-                this.timer = setTimeout(function() {
-                    self.timer = null;
-                    self.run(cycles);
-                }, 1);
+              if(this.debug) console.log("set Timeout.");
+              this.timer = setTimeout(function() {
+                self.timer = null;
+                self.run(cycles);
+              }, 1);
             }
         } else if(this.debug) {
             console.log("Timer exists");
@@ -87,7 +87,10 @@ VM.Container.prototype.schedule = function(all_asleep, cycles)
         }
     } else {
         this.stopping = false;
-        this.running = false;
+      this.running = false;
+      if(this.timer) {
+        clearTimeout(this.timer);
+      }
         this.do_callback('stopped');
     }
 }

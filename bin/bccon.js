@@ -138,26 +138,26 @@ if(vm_debugging) {
     });
 }
 
-if(path != null) {
+if(path != null && path != ':forth') {
     if(vm_debugging) console.log("Loading " + path);
-	fs.readFile(path, function(err, data) {
-		if(err) throw err;
-		vm.cpu.memwrite(0, data);
+	  fs.readFile(path, function(err, data) {
+		    if(err) throw err;
+		    vm.cpu.memwrite(0, data);
         if(vm_debugging) {
             console.log("Wrote " + data.length + " bytes to memory");
         }
 
         main_loop(vm, steps, steps != null);
-	});
+	  });
 } else {
-    const Forth = require("forth");
+    const Forth = require("vm/forth");
 
     function forth_init(vm)
     {
-        program_code = Forth.assemble(vm.info.keyboard_addr, vm.info.keyboard_irq, vm.info.timer_addr, vm.info.timer_irq);
-        vm.cpu.memwrite(LOAD_OFFSET, program_code); // todo ISR is at 0
+        program_code = Forth.assemble(1024*1024, 0, vm.info);
+        vm.cpu.memwrite(0, program_code);
     }
 
-	forth_init(vm);
+	  forth_init(vm);
     main_loop(vm, steps, steps != null);
 }
