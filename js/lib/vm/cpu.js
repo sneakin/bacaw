@@ -1305,15 +1305,22 @@ VM.CPU.INS_DEFS = [
         }
       ],
       [ "CLS", "Clear the status register's compare bits.",
-        [ [ 'bits', [ 0xF00, 8 ] ] ],
+        [ [ 'bits', [ 0xFF00, 8 ] ] ],
         function(vm, ins) {
             vm.clear_status(this.un.bits(ins));
         },
         function(vm, ins) {
-            vm.set_status(this.un.bits(ins));
-            vm.memwritel(0, vm.encode({op: ins}));
+            vm.set_status(VM.CPU.STATUS.CARRY | VM.CPU.STATUS.NEGATIVE);
+            vm.memwritel(0, vm.encode({op: ins, bits: VM.CPU.STATUS.CARRY}));
             vm.step();
-            assert.assert((vm.regread(REGISTERS.STATUS) & this.un.bits(ins)) == 0, 'clears the bits');
+            assert.assert((vm.regread(REGISTERS.STATUS) & VM.CPU.STATUS.CARRY) == 0, 'clears the bit');
+            assert.assert((vm.regread(REGISTERS.STATUS) & VM.CPU.STATUS.NEGATIVE) != 0, 'leaves the bit');
+
+            vm.reset();
+            vm.set_status(VM.CPU.STATUS.INT_ENABLED|VM.CPU.STATUS.SLEEP);
+            vm.memwritel(0, vm.encode({op: ins, bits: VM.CPU.STATUS.SLEEP}));
+            vm.step();
+            assert.assert((vm.regread(REGISTERS.STATUS) & VM.CPU.STATUS.SLEEP) == 0, 'clears the sleep bit');
         }
       ],
       [ "INTR", "Cause an interrupt with the register providing the interrupt number.",
