@@ -79,7 +79,9 @@ function pretty_hexdump(arr)
 
 function init()
 {
-    js_subs(document.body);
+  font_size = font_size || 24;
+  
+  js_subs(document.body);
 }
 
 if(typeof(module) != 'undefined') {
@@ -89,5 +91,5 @@ if(typeof(module) != 'undefined') {
 }
 
 if(typeof(window) != 'undefined') {
-  window.bacaw_init = bacaw_init;
+  window.bacaw_init = init;
 }
