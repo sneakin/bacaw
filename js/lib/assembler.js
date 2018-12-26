@@ -1,11 +1,12 @@
-const VM = require('vm.js');
+require('vm.js');
 const util = require('util.js');
 
-function Assembler_Impl()
+function Assembler_Impl(vm)
 {
-    this.calls = [];
-    this.labels = new Map;
-    this._ip = 0;
+  this.vm = vm;
+  this.calls = [];
+  this.labels = new Map;
+  this._ip = 0;
 }
 
 Assembler_Impl.prototype.call_op = function(proxy, op, args)
@@ -26,7 +27,7 @@ Assembler_Impl.prototype.call_op = function(proxy, op, args)
         case 'bytes':
             var inc = args[0].length;
             this._ip += Math.ceil(inc / VM.CPU.INSTRUCTION_SIZE) * VM.CPU.INSTRUCTION_SIZE; // align to instruction size
-            break;
+          break;
         default:
             this._ip += VM.CPU.INSTRUCTION_SIZE;
         }
@@ -45,7 +46,7 @@ Assembler_Impl.prototype.assemble_to_array = function()
     */
     var arr = [];
     for(var i = 0; i < this.calls.length; i++) {
-        var ins = this.encode_call_args(window.vm, this.calls[i], i, arr.length * VM.CPU.INSTRUCTION_SIZE);
+        var ins = this.encode_call_args(this.vm, this.calls[i], i, arr.length * VM.CPU.INSTRUCTION_SIZE);
         arr = arr.concat(ins);
     }
 
@@ -82,10 +83,16 @@ Assembler_Impl.prototype.encode_call_args = function(vm, op_call, n, ip)
     } else if(op_call[0] == 'bytes') {
         var src = op_call[1];
         var sa = new Uint16Array(Math.ceil(src.length / VM.CPU.INSTRUCTION_SIZE));
-        var bytes = new Uint8Array(sa.buffer);
+      var bytes = new Uint8Array(sa.buffer);
+      if(typeof(src) == 'string') {
+        for(var i = 0; i < src.length; i++) {
+          bytes[i] = src.charCodeAt(i);
+        }
+      } else {
         for(var i = 0; i < src.length; i++) {
             bytes[i] = src[i];
         }
+      }
         return Array.from(sa);
     } else {
         var op_code = VM.CPU.INS[op_call[0].toUpperCase()];
@@ -120,7 +127,7 @@ Assembler_Impl.UnknownKeyError = function(label)
 
 Assembler_Impl.prototype.resolve = function(label, relative)
 {
-    if(this.labels[label] == null) {
+  if(this.labels[label] == null) {
         throw new Assembler_Impl.UnknownKeyError(label);
     }
     
@@ -159,13 +166,17 @@ var Assembler_Proxy = {
     }
 };
 
-function Assembler()
+function Assembler(vm)
 {
-    var asm = new Assembler_Impl();
-    return new Proxy(asm, Assembler_Proxy);
+  if(!vm && typeof(window) != 'undefined') {
+    vm = window.vm;
+  }
+
+  var asm = new Assembler_Impl(vm);
+  
+  return new Proxy(asm, Assembler_Proxy);
 }
 
 if(typeof(module) != 'undefined') {
 	module.exports = Assembler;
 }
-
