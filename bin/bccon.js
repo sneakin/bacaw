@@ -23,12 +23,14 @@ function vm_init(ram_size)
     var cpu = new VM.CPU(mmu, ram_size);
     mmu.map_memory(0x0, ram_size, new RAM(ram_size));
 
+    var devcon_addr = 0xF0001000;
     var devcon = new DevConsole();
-    mmu.map_memory(0xF0001000, devcon.ram_size(), devcon);
+    mmu.map_memory(devcon_addr, devcon.ram_size(), devcon);
 
     var output_irq = VM.CPU.INTERRUPTS.user + 3;
+    var output_addr = 0xF0003000;
     var output = new OutputStream(process.stdout, null, vm, output_irq);
-    mmu.map_memory(0xF0003000, output.ram_size(), output);
+    mmu.map_memory(output_addr, output.ram_size(), output);
 
     var input_irq = VM.CPU.INTERRUPTS.user + 4;
     var input_addr = 0xF0004000;
@@ -52,15 +54,32 @@ function vm_init(ram_size)
           .add_device(timer)
           .add_device(rtc);
 
-	vm.info = {
-		keyboard_addr: input_addr,
-		keyboard_irq: input_irq,
-		timer_addr: timer_addr,
-		timer_irq: timer_irq,
-		rtc_addr: rtc_addr,
-        input_irq: input_irq,
-        output_irq: output_irq
-	};
+    vm.info = {
+        /*
+        keyboard: {
+            addr: keyboard_addr,
+            irq: keyboard_irq
+        },
+*/
+        console: {
+            addr: devcon_addr
+        },
+        timer: {
+            addr: timer_addr,
+            irq: timer_irq
+        },
+        rtc: {
+            addr: rtc_addr
+        },
+        input: {
+            addr: input_addr,
+            irq: input_irq
+        },
+        output: {
+            addr: output_addr,
+            irq: output_irq
+        }
+    };
 
 	return vm;
 }

@@ -24,7 +24,7 @@ function InputStream(stream, mem_size, vm, irq)
   this.reset();
 
   if(this.stream) {
-    this.stream.pause();
+    //this.stream.pause();
 
     var self = this;
     this.stream.on('close', function() {
@@ -33,9 +33,12 @@ function InputStream(stream, mem_size, vm, irq)
     });
   
     this.stream.on('readable', function() {
-      if(self.data.ready == 0) {
-        self.read_more();
-      }
+      self.data.eos = 0;
+      self.trigger_interrupt();
+    });
+
+    this.stream.on('data', function(data) {
+      self.read_more(data);
     });
   }
 }
@@ -47,30 +50,37 @@ InputStream.prototype.trigger_interrupt = function()
   }
 }
 
-InputStream.prototype.read_more = function()
+InputStream.prototype.read_more = function(data)
 {
+  /*
     var len = this.data.buffer.length;
     if(this.stream._readableState) len = Math.min(this.stream._readableState.length, len);
     if(this.stream.readableLength) len = Math.min(this.stream.readableLength(), len);
     
   var data = this.stream.read(Math.max(len, 1));
+*/
+  this.stream.pause();
+
   if(this.debug) {
-    console.log("InputStream", len, this.data.eos, this.data.ready, "Read ", data);
+    console.log("InputStream", data && data.length, this.data.eos, this.data.ready, "Read ", data);
   }
 
-    if(data == null) {
-        this.data.ready = 0;
-        return false;
-    } else if(typeof(data) == 'string') {
-        for(var i = 0; i < data.length; i++) {
-            this.data.buffer[i] = data.charCodeAt(i);
-        }
+  if(data && data.length > 0) {
+    if(typeof(data) == 'string') {
+      for(var i = 0; i < data.length; i++) {
+        this.data.buffer[i] = data.charCodeAt(i);
+      }
+      this.data.buffer.fill(0, data.length);
     } else {
-        for(var i = 0; i < data.length; i++) {
-            this.data.buffer[i] = data[i];
-        }
-    }
-
+      this.data.buffer.set(data);
+      this.data.buffer.fill(0, data.length);
+    }    
+  } else {
+    this.data.buffer.fill(0);
+    this.data.ready = 0;
+    return false;
+  }
+  
     this.data.ready = data.length;
     this.data.eos = 0;
 
@@ -105,7 +115,7 @@ InputStream.prototype.write = function(addr, data)
 {
   this.ram.write(addr, data);
   if(addr == this.data.ds.fields['ready'].offset && this.data.ready == 0) {
-    this.read_more();
+    this.stream.resume();
   }
 }
 
@@ -113,7 +123,7 @@ InputStream.prototype.write1 = function(addr, value, type)
 {
     this.ram.write1(addr, value, type);
     if(addr == this.data.ds.fields['ready'].offset && this.data.ready == 0) {
-        this.read_more();
+      this.stream.resume();
     }
 }
 

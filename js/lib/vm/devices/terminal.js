@@ -10,10 +10,12 @@ function Terminal(element, term_opts)
     Colors.enabled = true;
 
     term_opts = util.merge_options({
-        cursorBlink: true
+      cursorBlink: true,
+      local_echo: true
     }, term_opts);
     
-    this.term = new Xterm.Terminal(term_opts);
+  this.term = new Xterm.Terminal(term_opts);
+  this.local_echo = term_opts.local_echo;
     this.buffer = "";
     var self = this;
     this.on_terminal('data', function(c) {
@@ -21,7 +23,6 @@ function Terminal(element, term_opts)
         if(c == '\r') self.push_byte('\n');
     });
     this.term.open(element);
-    this.term.writeln(Colors.red("Hello!"));
 }
 
 Terminal.prototype.on_terminal = function(event, fn)
@@ -31,9 +32,21 @@ Terminal.prototype.on_terminal = function(event, fn)
 
 Terminal.prototype.push_byte = function(data)
 {
-    if(this.debug) console.log("Terminal push", data);
+  if(this.debug) console.log("Terminal push", data, data.charCodeAt(0));
+  if(data == "\x7F" || data == "\x08") {
+    this.buffer = this.buffer.slice(0, this.buffer.length - 1);
+  } else {
     this.buffer += data;
-    return this;
+  }
+  
+  if(this.local_echo) {
+    if(data == "\x7F" || data == "\x08") {
+      data = "\x08 \x08";
+    }
+    this.write(data);
+  }
+
+  return this;
 }
 
 Terminal.prototype.read = function(amount)
@@ -52,6 +65,7 @@ Terminal.prototype.readableLength = function()
 
 Terminal.prototype.write = function(data)
 {
+  if(this.debug) console.log("Terminal write:", data, data.charCodeAt(0));
     this.term.write(data);
     return this;
 }
@@ -62,24 +76,43 @@ Terminal.Readable = function(terminal)
     this.callbacks = [];
 
     var self = this;
-    this.terminal.on_terminal('data', function(c) {
-        if(c == "\r" || c == "\n") {
-            if(this.debug) console.log("Terminal calling readable", c, self.terminal.buffer);
-            var cb = self.callbacks['readable'];
-            if(cb) cb();
-        }
-    });
+
+  this.terminal.on_terminal('data', function(c) {
+    if(c.charCodeAt(0) < 32) {
+      self.on_data();
+    }
+  });
 }
 
 Terminal.Readable.prototype.pause = function()
 {
-    return this;
+  this.is_paused = true;
+  return this;
+}
+
+Terminal.Readable.prototype.resume = function()
+{
+  this.is_paused = false;
+  return this;
 }
 
 Terminal.Readable.prototype.on = function(event, fn)
 {
-    this.callbacks[event] = fn;
+  this.callbacks[event] = fn;
+  if(event == 'readable') {
+    if(this.debug) console.log("Terminal calling readable", this.terminal.buffer);
+    fn();
+  }
     return this;
+}
+
+Terminal.Readable.prototype.on_data = function()
+{
+  if(!this.is_paused) {
+    var data = this.read();
+    var cb = this.callbacks['data'];
+    if(cb) cb(data);
+  }
 }
 
 Terminal.Readable.prototype.read = function(amount)
@@ -107,9 +140,9 @@ Terminal.Writable.prototype.on = function(event, fn)
 
 Terminal.Writable.prototype.write = function(data, encoding, callback)
 {
-    this.terminal.write(data);
-    if(callback) setTimeout(callback, 1); // Writeables expect an async callback
-    return this;
+  this.terminal.write(data);
+  if(callback) setTimeout(callback, 1); // Writeables expect an async callback
+  return this;
 }
 
 Terminal.Writable.prototype.end = function()
