@@ -50,6 +50,7 @@ VM.TYPE_DEFS = {
     ULONG: [ 0, 'Uint32', 0, 0xFFFFFFFF ],
     UBYTE: [ 1, 'Uint8', 0, 0xFF ],
     USHORT: [ 2, 'Uint16', 0, 0xFFFF ],
+    POINTER: [ 6, 'Uint32', 0, 0xFFFFFFFF ],
 };
 
 VM.TYPES = util.map_each(VM.TYPE_DEFS, function(name, def) {
