@@ -1,8 +1,9 @@
 // -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 2 -*-
 
-require('vm.js');
+require('vm/types');
 const util = require('more_util');
 const Assembler = require('assembler.js');
+require('vm');
 const asm_memcpy = require('vm/asm/memcpy');
 
 var TESTING = 0;
@@ -55,6 +56,7 @@ Forth.assembler = function(ds, cs, info) {
   var STATE_REG = HEAP_REG - 2;
   var PARAM_REG = HEAP_REG - 3;
   var TOS_REG = HEAP_REG - 4;
+  var FP_REG = HEAP_REG - 5;
 
   function longify(str)
   {
@@ -89,8 +91,9 @@ Forth.assembler = function(ds, cs, info) {
       sie().
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
       load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-bootstrap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode-init').
+      call(0, VM.CPU.REGISTERS.CS).uint32('init-state').
+      //call(0, VM.CPU.REGISTERS.CS).uint32('eval-bootstrap').
       //call(0, VM.CPU.REGISTERS.CS).uint32('forth_loop_start').
       call(0, VM.CPU.REGISTERS.CS).uint32('dumb_forth_loop_start').
       load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('reset');
@@ -101,7 +104,11 @@ Forth.assembler = function(ds, cs, info) {
       call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
       ret();
   asm.label('bootstrap').
-      bytes("[secrets][\n\r!!yeH]^^.......\x00").
+      bytes("\"secrets\"\"\n\r!!yeH\"^^.......B\x00").
+      uint32(TERMINATOR);
+  asm.label('boot-loop').
+      bytes("\"\n\rKO\"^^....\x00").
+      //bytes("(U[\n\rKO]^^....|$_D)\x00").
       uint32(TERMINATOR);
   
   asm.label('input_data_position', 0).
@@ -111,7 +118,8 @@ Forth.assembler = function(ds, cs, info) {
       label('heap_top', 16).
       label('eval-word-size', 20).
       label('dict', 24).
-      label('dict_end', 24 + 256 * dict_entry_size);
+      label('dict_end', 24 + 256 * dict_entry_size).
+      label('immediate-dict', 28 + 256 * dict_entry_size);
 
   asm.label('data_init').
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
@@ -331,12 +339,34 @@ Forth.assembler = function(ds, cs, info) {
       load(TOS_REG, 0, HEAP_REG).uint32(4 * -2).
       ret();
 
+  asm.label('2dup').
+      // (a b) -> (a b a b)
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup1').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup1').
+      ret();
+  
   asm.label('swap').
       load(VM.CPU.REGISTERS.R1, 0, HEAP_REG).uint32(0).
       store(TOS_REG, 0, HEAP_REG).uint32(0).
       mov(TOS_REG, VM.CPU.REGISTERS.R1).
       ret();
 
+  asm.label('swap2').
+      // c b a -> a b c
+      mov(VM.CPU.REGISTERS.R0, TOS_REG).
+      load(TOS_REG, 0, HEAP_REG).int32(-4).
+      store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).int32(-4).
+      ret();
+  
+  asm.label('rot').
+      // (a b c) -> (c a b)
+      // c b a
+      load(VM.CPU.REGISTERS.R0, 0, HEAP_REG).int32(-4). // c
+      mov(VM.CPU.REGISTERS.R1, TOS_REG). // a
+      mov(TOS_REG, VM.CPU.REGISTERS.R0). // c -> TOS
+      store(VM.CPU.REGISTERS.R1, 0, HEAP_REG).int32(-4). // a -> Data-4
+      ret();
+  
   asm.label('write').
       mov(VM.CPU.REGISTERS.R0, TOS_REG).
       call(0, VM.CPU.REGISTERS.CS).uint32('output_write_byte').
@@ -369,6 +399,7 @@ Forth.assembler = function(ds, cs, info) {
       ret();
 
   asm.label('ifthen').
+      // then else condition
       load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
       cmpi(TOS_REG, VM.CPU.REGISTERS.R1).
       inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('ifthen_else', true).
@@ -384,6 +415,12 @@ Forth.assembler = function(ds, cs, info) {
       label('ifthen_end').
       ret();
 
+  asm.label('ifthen2').
+      // condition then else
+      call(0, VM.CPU.REGISTERS.CS).uint32('swap2').
+      call(0, VM.CPU.REGISTERS.CS).uint32('ifthen').
+      ret();
+  
   asm.label('equal').
       mov(VM.CPU.REGISTERS.R0, TOS_REG).
       call(0, VM.CPU.REGISTERS.CS).uint32('drop').
@@ -457,6 +494,11 @@ Forth.assembler = function(ds, cs, info) {
       mov(TOS_REG, EVAL_IP_REG).
       ret();
 
+  asm.label('chere').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.SP).
+      ret();
+
   asm.label('here').
       call(0, VM.CPU.REGISTERS.CS).uint32('dup').
       mov(TOS_REG, HEAP_REG).
@@ -468,16 +510,23 @@ Forth.assembler = function(ds, cs, info) {
       call(0, VM.CPU.REGISTERS.CS).uint32('drop').
       ret();
 
-  asm.label('conpush').
+  asm.label('rpush').
       pop(VM.CPU.REGISTERS.R0).
       push(TOS_REG).
       push(VM.CPU.REGISTERS.R0).
       ret();
 
-  asm.label('conpop').
+  asm.label('rpop').
       pop(VM.CPU.REGISTERS.R0).
       pop(TOS_REG).
       push(VM.CPU.REGISTERS.R0).
+      ret();
+  
+  asm.label('rswap').
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
+      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(8).
+      store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(4).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(8).
       ret();
   
   asm.label('stash').
@@ -513,13 +562,12 @@ Forth.assembler = function(ds, cs, info) {
       ret();
 
   asm.label('literal-long').
-      load(VM.CPU.REGISTERS.R0, 0, EVAL_IP_REG).uint32(0).
-      and(PARAM_REG).
-      push(VM.CPU.REGISTERS.R0).
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      load(TOS_REG, 0, EVAL_IP_REG).uint32(0).
+      //and(PARAM_REG).
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(4).
       call(0, VM.CPU.REGISTERS.CS).uint32('eval-inc-ip-by').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      pop(TOS_REG).
       ret();
   
   /*
@@ -577,29 +625,34 @@ Forth.assembler = function(ds, cs, info) {
     '@': [ 'here', 0 ],
     'F': [ 'forget', 0 ],
     '(': [ 'eip', 0 ],
-    ')': [ 'eval_words', 0 ],
+    ')': [ 'eval-jump', 0 ],
+    'Q': [ 'quit', 0 ],
     'J': [ 'call', 0 ],
-    '>': [ 'peek', 0 ],
-    '<': [ 'poke', 0 ],
+    'G': [ 'eval_words', 0 ],
+    'K': [ 'exec_words', 0 ],
+    'F': [ 'peek', 0 ],
+    'S': [ 'poke', 0 ],
     '^': [ 'drop', 0 ],
     '~': [ 'dup', 0 ],
     '%': [ 'swap', 0 ],
-    '?': [ 'ifthen', 0 ],
-    'U': [ 'conpush', 0 ],
-    'D': [ 'conpop', 0 ],
+    '?': [ 'ifthen2', 0 ],
+    'U': [ 'rpush', 0 ],
+    'D': [ 'rpop', 0 ],
     ':': [ 'define-sym', 0 ],
-    'S': [ 'set-sym-value', 0 ],
+    'V': [ 'set-sym-value', 0 ],
+    'P': [ 'set-sym-param', 0 ],
     '$': [ 'lookup-addr', 0 ],
-    '0': [ 'zero', 0 ],
+    'Z': [ 'zero', 0 ],
     '=': [ 'equal', 0 ],
     '.': [ 'write', 0 ],
     //',': [ 'write_word', 0 ],
-    '\'': [ 'literal-byte', 0 ],
+    '\'': [ 'quote-mode', 0xFF ],
+    ',': [ 'literal-byte', 0 ],
     '|': [ 'read', 0 ],
     'I': [ 'input_flush', 0 ],
-    '\"': [ 'read_string_reg_term', '\"'.charCodeAt(0) ],
-    '\xFD': [ 'read_string_reg_term_preloop', '\"'.charCodeAt(0) ],
-    '\xFE': [ 'read_string_reg_term_done', 0 ],
+    //'\"': [ 'read_string_reg_term', '\"'.charCodeAt(0) ],
+    //'\xFD': [ 'read_string_reg_term_preloop', '\"'.charCodeAt(0) ],
+    //'\xFE': [ 'read_string_reg_term_done', 0 ],
     '#': [ 'literal-script-long', 0 ],
     '\xA3': [ 'literal_shift', 0 ],
     'L': [ 'bitshift-left', 0 ],
@@ -607,13 +660,18 @@ Forth.assembler = function(ds, cs, info) {
     '-': [ 'int-sub', 0 ],
     '*': [ 'int-mul', 0 ],
     '/': [ 'int-div', 0 ],
+    '<': [ 'int-lt', 0 ],
+    '>': [ 'int-gt', 0 ],
     '/': [ 'stash', 0 ],
     '\\': [ 'param', 0 ],
     '\n': [ 'nopper', 0 ],
     '\r': [ 'nopper', 0 ],
     '_': [ 'execute', 0 ],
-    '[': [ 'literal-mode', ']'.charCodeAt(0) ],
-    '{': [ 'compile-mode', '}'.charCodeAt(0) ]
+    '\"': [ 'literal-mode', '\"'.charCodeAt(0) ],
+    '[': [ 'indirect-mode', ']'.charCodeAt(0) ],
+    '{': [ 'compile-mode', '}'.charCodeAt(0) ],
+    'R': [ 'rot', 0 ],
+    'B': [ 'eval_byte_param', 'boot-loop' ],
   };
 
   asm.label('dict_init').
@@ -653,13 +711,22 @@ Forth.assembler = function(ds, cs, info) {
 
   asm.ret();
 
+  asm.label('state-dict').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      load(TOS_REG, 0, STATE_REG).uint32(4).
+      ret();
+  
   // lookup
   asm.label('lookup-addr').
-      // TOS: symbol
+      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict');
+  asm.label('lookup-addr-dict').
+      // Stack: symbol dict
+      mov(VM.CPU.REGISTERS.R2, TOS_REG).
+      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
       mov(VM.CPU.REGISTERS.R1, TOS_REG).
       // R1: symbol
       // R2: dictionary address
-      load(VM.CPU.REGISTERS.R2, 0, STATE_REG).uint32(4).
+      //load(VM.CPU.REGISTERS.R2, 0, STATE_REG).uint32(4).
       // R0: entry offset
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(dict_entry_size).
       cls(VM.CPU.STATUS.NUMERICS).
@@ -671,7 +738,7 @@ Forth.assembler = function(ds, cs, info) {
       ret();
 
   asm.label('lookup-sym').
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr');
+      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict');
   asm.label('load-entry').
       // load entry value and param
       load(PARAM_REG, 0, TOS_REG).uint32(4).
@@ -680,45 +747,80 @@ Forth.assembler = function(ds, cs, info) {
   
   // define
   asm.label('set-sym-value').
-      // value, sym
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      load(TOS_REG, 0, STATE_REG).uint32(4);
+  asm.label('set-sym-value-dict').
+      // value, sym, dict
+      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict').
       // value, entry
       call(0, VM.CPU.REGISTERS.CS).uint32('poke').
       ret();
 
   asm.label('set-sym-param').
-      // value, sym
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      load(TOS_REG, 0, STATE_REG).uint32(4);
+  asm.label('set-sym-param-dict').
+      // value, sym, dict
+      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict').
       inc(TOS_REG).uint32(4).
       // value, entry+4
       call(0, VM.CPU.REGISTERS.CS).uint32('poke').
       ret();
 
   asm.label('set-sym-eval').
-      // sym
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      // sym dict
+      call(0, VM.CPU.REGISTERS.INS).uint32('dup').
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32('eval_param').
+      // sym dict ptr
+      call(0, VM.CPU.REGISTERS.CS).uint32('rot').
+      // ptr dict sym
       call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-value').
+      // ptr sym dict
+      call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-value-dict').
       ret();
-  
+
   asm.label('define-sym').
-      // (ptr sym)
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict');
+  asm.label('define-sym-dict').
+      // (ptr sym dict)
+      call(0, VM.CPU.REGISTERS.CS).uint32('2dup').
       call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-eval').
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-param').
+      call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-param-dict').
       ret();
-  
+
   asm.label('execute').
       // TOS: sym
       // Data: call args
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr');
+      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict');
+  asm.label('execute-dict').
+      // call args sym dict
+      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict');
   asm.label('execute-addr').
       call(0, VM.CPU.REGISTERS.CS).uint32('load-entry');
   asm.label('call').
       mov(VM.CPU.REGISTERS.R0, TOS_REG).
       call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      callr(VM.CPU.REGISTERS.CS, VM.CPU.REGISTERS.R0).
+      cls(VM.CPU.STATUS.NUMERICS).
+      addi(VM.CPU.REGISTERS.CS, VM.CPU.REGISTERS.STATUS).
+      mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R0).
+      // unlikely, but
+      ret();
+
+  asm.label('set-state').
+      mov(STATE_REG, TOS_REG).
+      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
+      ret();
+  asm.label('enter-state').
+      pop(VM.CPU.REGISTERS.R0). // return addr
+      push(STATE_REG).
+      push(VM.CPU.REGISTERS.R0).
+      call(0, VM.CPU.REGISTERS.CS).uint32('set-state').
+      ret();
+
+  asm.label('exit-state').
+      pop(VM.CPU.REGISTERS.R0).
+      pop(STATE_REG).
+      push(VM.CPU.REGISTERS.R0).
       ret();
 
   //
@@ -726,19 +828,31 @@ Forth.assembler = function(ds, cs, info) {
   // Evaluates each token as it is encountered.
   //
   
-  asm.label('eval-mode').
-      //load(STATE_REG, 0, VM.CPU.REGISTERS.INS).uint32('eval-state').
+  asm.label('init-state').
       mov(STATE_REG, VM.CPU.REGISTERS.CS).
       inc(STATE_REG).uint32('eval-state').
+      ret();
+  
+  asm.label('eval-mode-init').
+      // init state state
+      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R1).uint32('eval-state').
       // set exec field
-      //mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.CS).
-      //inc(VM.CPU.REGISTERS.R0).uint32('execute').
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('execute').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(0).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
       // set param field
       mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
       inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(4).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
+      ret();
+
+  asm.label('eval-mode').
+      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode-init').
+      // change state
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.R1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
       ret();
 
   asm.label('eval-state').
@@ -747,25 +861,33 @@ Forth.assembler = function(ds, cs, info) {
       uint32(0xFF);
 
   //
-  // Exec mode
+  // Exec indirect mode
   // Evaluates a list of dictionary addresses.
   //
   
   asm.label('exec-execute').
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
+      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
+      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('exec-done', true).
       load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('execute-addr');
-
+  asm.label('exec-done').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
+      ret();
   asm.label('exec-mode').
-      //load(STATE_REG, 0, VM.CPU.REGISTERS.INS).uint32('exec-state').
-      mov(STATE_REG, VM.CPU.REGISTERS.CS).
-      inc(STATE_REG).uint32('exec-state').
-      // load state fields
-      //mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.CS).
-      //inc(VM.CPU.REGISTERS.R0).uint32('execute-addr').
+      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R1).uint32('exec-state').
+      // init state fields
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('exec-execute').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(0).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
       mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
       inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(4).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
+      // change state
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.R1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
       ret();
 
   asm.label('exec-state').
@@ -782,7 +904,8 @@ Forth.assembler = function(ds, cs, info) {
       load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(12).
       cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
       inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('indirect-done', true).
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr').
+      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict').
+      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict').
       call(0, VM.CPU.REGISTERS.CS).uint32('swap').
       ret();
   asm.label('indirect-done').
@@ -790,31 +913,26 @@ Forth.assembler = function(ds, cs, info) {
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
       // swap pointer and terminator
       call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      // save stack position from before {
-      push(TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      // eval data
-      call(0, VM.CPU.REGISTERS.CS).uint32('exec-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('input_flush').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_words').
-      // move stack back fixme?
-      pop(HEAP_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('roll').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode').
+      // exit state
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
       ret();
-  asm.label('indirect-mode'). // literal mode followed by eval
+  asm.label('indirect-mode'). // literal mode but with lookup
       call(0, VM.CPU.REGISTERS.CS).uint32('here').
-      //load(STATE_REG, 0, VM.CPU.REGISTERS.INS).uint32('indirect-state').
-      mov(STATE_REG, VM.CPU.REGISTERS.CS).
-      inc(STATE_REG).uint32('indirect-state').
+      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R1).uint32('indirect-state').
       // set state fields
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('lookup-indirect').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(0).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
       mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
       inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(4).
-      store(PARAM_REG, 0, STATE_REG).uint32(12).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
+      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(12).
+      // change state
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.R1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
       ret();
 
   asm.label('indirect-state').
@@ -827,34 +945,122 @@ Forth.assembler = function(ds, cs, info) {
   // Literal mode
   // Pushes tokens straight to the data stack.
   //
+
+  asm.label('execute-immediate').
+      // todo lookup immediates in a dictionary
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('\''.charCodeAt(0)).
+      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
+      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('execute').
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('['.charCodeAt(0)).
+      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
+      load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('execute').
+      ret();
   
   asm.label('lookup-literal-mode').
-      load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(4).
+      load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(12).
       cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
       inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('literal-mode-done', true).
+      call(0, VM.CPU.REGISTERS.CS).uint32('execute-immediate').
       call(0, VM.CPU.REGISTERS.CS).uint32('swap').
       ret();
   asm.label('literal-mode-done').
-      //mov(TOS_REG, VM.CPU.REGISTERS.R2).
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
       call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
       ret();
   asm.label('literal-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('here'). 
-      mov(STATE_REG, VM.CPU.REGISTERS.CS).
-      inc(STATE_REG).uint32('literal-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('here').
+      // init state state
+      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R1).uint32('literal-state').
       // set state fields
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('lookup-literal-mode').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(0).
-      store(PARAM_REG, 0, STATE_REG).uint32(4).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
+      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(12).
+      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
+      inc(VM.CPU.REGISTERS.R0).uint32('dict').
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
+      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
+      inc(VM.CPU.REGISTERS.R0).uint32('immediate-dict').
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(16).
+      // change state
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.R1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
       ret();
 
   asm.label('literal-state').
       uint32('lookup-literal-mode').
+      uint32('dict').
+      uint32(0xFF).
       uint32(PARAM_REG).
-      uint32(0xFF);
+      uint32('immediate-dict');
+
+  //
+  // quote-mode: One off literal
+  //
   
+  asm.label('quote-mode-done').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
+      ret();
+  asm.label('quote-mode').
+      // init state state
+      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R1).uint32('quote-state').
+      // set state fields
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('quote-mode-done').
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
+      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(8). // param sets mask
+      // change state
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.R1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      ret();
+
+  asm.label('quote-state').
+      uint32('quote-mode-done').
+      uint32('dict'). // dict
+      uint32(PARAM_REG); // mask
+  
+  //
+  // Exec direct mode
+  // Evaluates a list of addresses.
+  //
+  
+  asm.label('direct-execute').
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
+      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
+      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('direct-done', true).
+      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call');
+  asm.label('direct-done').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
+      ret();
+  asm.label('direct-mode').
+      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R1).uint32('direct-state').
+      // init state fields
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('direct-execute').
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
+      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
+      inc(VM.CPU.REGISTERS.R0).uint32('dict').
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
+      // change state
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.R1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      ret();
+
+  asm.label('direct-state').
+      uint32('direct-execute').
+      uint32('dict').
+      uint32(0xFFFFFFFF);
+
   //
   // Compile mode
   // Replaces the tokens with their machine code calls and loads.
@@ -903,11 +1109,12 @@ Forth.assembler = function(ds, cs, info) {
       load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(12).
       cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
       inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('compile-done', true).
+      call(0, VM.CPU.REGISTERS.CS).uint32('execute-immediate').
        // save here ptr
       call(0, VM.CPU.REGISTERS.CS).uint32('swap').
       push(TOS_REG).
       // lookup sym
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
+      load(TOS_REG, 0, STATE_REG).uint32(4).
       call(0, VM.CPU.REGISTERS.CS).uint32('lookup-sym').
       // emit machine codes
       push(TOS_REG).
@@ -928,19 +1135,25 @@ Forth.assembler = function(ds, cs, info) {
       // restore pointer
       call(0, VM.CPU.REGISTERS.CS).uint32('dup').
       pop(TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
       ret();
-  asm.label('compile-mode'). // literal mode followed by eval
+  asm.label('compile-mode').
       call(0, VM.CPU.REGISTERS.CS).uint32('here').
-      mov(STATE_REG, VM.CPU.REGISTERS.CS).
-      inc(STATE_REG).uint32('compile-state').
+      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R1).uint32('compile-state').
       // set state fields
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('lookup-compile').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(0).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
       mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
       inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(4).
-      store(PARAM_REG, 0, STATE_REG).uint32(12).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
+      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(12).
+      // change state
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.R1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
+      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
       ret();
 
   asm.label('compile-state').
@@ -968,28 +1181,74 @@ Forth.assembler = function(ds, cs, info) {
         ret();
   }
 
+  asm.label('int-lt').
+      mov(VM.CPU.REGISTERS.R0, TOS_REG).
+      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
+      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
+      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      load(TOS_REG, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
+      ret();
+  asm.label('int-gt').
+      mov(VM.CPU.REGISTERS.R0, TOS_REG).
+      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
+      cmpi(VM.CPU.REGISTERS.R0, TOS_REG).
+      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      load(TOS_REG, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
+      ret();
+
+  asm.label('set-word-size').
+      store(TOS_REG, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
+      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
+      ret();
+  asm.label('with-word-size').
+      pop(VM.CPU.REGISTERS.R0). // return addr
+      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
+      push(VM.CPU.REGISTERS.R1).
+      push(VM.CPU.REGISTERS.R0).
+      call(0, VM.CPU.REGISTERS.CS).uint32('set-word-size').
+      ret();
+
+  asm.label('end-word-size').
+      pop(VM.CPU.REGISTERS.R0).
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      pop(TOS_REG).
+      call(0, VM.CPU.REGISTERS.CS).uint32('set-word-size').
+      push(VM.CPU.REGISTERS.R0).
+      ret();
+
+  asm.label('exec_words').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exec-mode').
+      call(0, VM.CPU.REGISTERS.CS).uint32('eval_words').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
+      ret();
+  
+  asm.label('exec_direct').
+      call(0, VM.CPU.REGISTERS.CS).uint32('direct-mode').
+      call(0, VM.CPU.REGISTERS.CS).uint32('eval_words').
+      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
+      ret();
+  
   asm.label('eval_param').
       call(0, VM.CPU.REGISTERS.CS).uint32('dup').
       mov(TOS_REG, PARAM_REG);
   asm.label('eval_words').
-      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
-      push(VM.CPU.REGISTERS.R2).
-      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(4).
-      store(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(4).
+      call(0, VM.CPU.REGISTERS.CS).uint32('with-word-size').
       call(0, VM.CPU.REGISTERS.CS).uint32('eval').
-      pop(VM.CPU.REGISTERS.R2).
-      store(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
+      call(0, VM.CPU.REGISTERS.CS).uint32('end-word-size').
       ret();
-  
+
+  asm.label('eval_byte_param').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, PARAM_REG);
   asm.label('eval_bytes').
       // TOS: ptr
-      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
-      push(VM.CPU.REGISTERS.R2).
-      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(1).
-      store(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(1).
+      call(0, VM.CPU.REGISTERS.CS).uint32('with-word-size').
       call(0, VM.CPU.REGISTERS.CS).uint32('eval').
-      pop(VM.CPU.REGISTERS.R2).
-      store(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
+      call(0, VM.CPU.REGISTERS.CS).uint32('end-word-size').
       ret();
 
   asm.label('eval-inc-ip-by').
@@ -1009,7 +1268,9 @@ Forth.assembler = function(ds, cs, info) {
 
   asm.label('eval').
       // TOS: ptr to string to eval
-      push(EVAL_IP_REG).
+      push(EVAL_IP_REG);
+  asm.label('eval-jump').
+      //mov(FP_REG, VM.CPU.REGISTERS.SP).
       mov(EVAL_IP_REG, TOS_REG).
       call(0, VM.CPU.REGISTERS.CS).uint32('drop');
   
@@ -1038,9 +1299,18 @@ Forth.assembler = function(ds, cs, info) {
       // prep next loop
       load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('eval-next');
   asm.label('eval-done').
+      //halt().
+      //load(VM.CPU.REGISTERS.IP, 0, FP_REG).uint32(4);
       pop(EVAL_IP_REG).
       ret();
 
+  asm.label('quit').
+      halt().
+      pop(VM.CPU.REGISTERS.R0).
+      pop(EVAL_IP_REG).
+      push(VM.CPU.REGISTERS.R0).
+      ret();
+  
   asm.label('dumb_forth_loop_start').
       call(0, VM.CPU.REGISTERS.CS).uint32('write_helo').
       call(0, VM.CPU.REGISTERS.CS).uint32('write_ok');
@@ -1058,6 +1328,17 @@ Forth.assembler = function(ds, cs, info) {
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(HELO).
       call(0, VM.CPU.REGISTERS.CS).uint32('write_word').
       ret();
+
+  /*
+  asm.label('write_ok').
+      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
+      mov(TOS_REG, VM.CPU.REGISTERS.CS).
+      inc(TOS_REG).uint32('write_ok_script').
+      call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
+      ret();
+  asm.label('write_ok_script').
+      bytes("\"KO\n\r\"^^....\" >\n\r\"^^....\x00");
+*/
 
   asm.label('write_ok').
       call(0, VM.CPU.REGISTERS.CS).uint32('dup').
@@ -1090,6 +1371,7 @@ Forth.assembler = function(ds, cs, info) {
       load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('forth_loop_halt').
       //call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // the length
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(input_dev_addr + input_dev_buffer).
+      //call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
       call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
       load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('forth_loop').
       ret();
@@ -1103,6 +1385,15 @@ Forth.assembler = function(ds, cs, info) {
   
   return asm;
 }
+
+Forth.bootstrap =
+    "\"' 'K'O...\"'O:"
+    + "\"' '>' ...\"'P:"
+    + "\"_E\"'F:"
+    + "\"|~'\r='F'^?\"'E:"
+    + "\"IOPEL\"'L:"
+    + "{IOPEL}'LS"
+;
 
 Forth.assemble = function(ds, cs, info) {
   return Forth.assembler(ds, cs, info).assemble();
