@@ -5,11 +5,60 @@ const util = require('more_util');
 const Assembler = require('assembler.js');
 require('vm');
 const asm_memcpy = require('vm/asm/memcpy');
+const DataStruct = require('data_struct');
 
 var TESTING = 0;
 
 function Forth()
 {
+}
+
+function longify(str)
+{
+  return str.split('').
+      map((c) => c.charCodeAt(0)).
+      reverse().
+      reduce((a, c) => (a << 8) | c);
+}
+
+var TERMINATOR = longify("STOP");
+var CRNL = longify("\r\n");
+var HELO = longify("HELO");
+var BYE = longify("\nBYE");
+var OK1 = longify(" OK ");
+var OK2 = longify("\r\n> ");
+var ERR1 = longify("\r\nER");
+var ERR2 = longify("\r\n> ");
+
+function cellpad(str)
+{
+  var arr = new Uint8Array((2 + str.length) * VM.TYPES.ULONG.byte_size);
+  var dv = new DataView(arr.buffer);
+
+  VM.TYPES.ULONG.set(dv, 0, str.length, true);
+  VM.TYPES.ULONG.set(dv, (1 + str.length) * VM.TYPES.ULONG.byte_size, TERMINATOR, true);
+  
+  for(var i = 0; i < str.length; i++) {
+    VM.TYPES.ULONG.set(dv, (1 + i) * VM.TYPES.ULONG.byte_size, str.charCodeAt(i), true);
+  }
+  
+  return arr;
+}
+
+function isr(asm, irq, label)
+{
+  var isr_asm = new Assembler();
+  isr_asm.load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32(asm.resolve(label)).bytes([0, 0]);
+  var isr_bytes = isr_asm.assemble();
+  var isr = new Uint32Array(isr_bytes.buffer, isr_bytes.byteOffset);
+  
+  asm.push(VM.CPU.REGISTERS.STATUS).
+      cie().
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(isr[0]).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(irq * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE).
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(isr[1]).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(irq * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE + VM.CPU.REGISTER_SIZE).
+      pop(VM.CPU.REGISTERS.STATUS);
 }
 
 function asm_isr(asm, max)
@@ -23,112 +72,11 @@ function asm_isr(asm, max)
   return asm;
 }
 
-Forth.assembler = function(ds, cs, info) {
-  var asm = new Assembler();
-
-  info = util.merge_options({
-    input: {
-      irq: 0xA,
-      addr: 0xFFFF1000
-    },
-    output: {
-      irq: 0xB,
-      addr: 0xFFFF2000
-    }
-  }, info);
-  
-  var input_dev_irq = info.input.irq;
-  var input_dev_addr = info.input.addr;
+function input_asm(asm, input_dev_irq, input_dev_addr)
+{
   var input_dev_length = 0;
   var input_dev_buffer = 8;
 
-  var output_dev_irq = info.output.irq;
-  var output_dev_addr = info.output.addr;
-  var output_dev_length = 8 + 1024;
-  var output_dev_buffer = 8;
-
-  var dict_entry_size = 8;
-
-  var STACK_SIZE = 4*1024;
-  var DS_SIZE = 1024*2;
-  var HEAP_REG = VM.CPU.REGISTERS.DS - 1;
-  var EVAL_IP_REG = HEAP_REG - 1;
-  var STATE_REG = HEAP_REG - 2;
-  var PARAM_REG = HEAP_REG - 3;
-  var TOS_REG = HEAP_REG - 4;
-  var FP_REG = HEAP_REG - 5;
-
-  function longify(str)
-  {
-    return str.split('').
-        map((c) => c.charCodeAt(0)).
-        reverse().
-        reduce((a, c) => (a << 8) | c);
-  }
-  
-  var TERMINATOR = longify("STOP");
-  var HELO = longify("HELO");
-  var OK1 = longify("\r\nOK");
-  var OK2 = longify("\r\n> ");
-  var ERR1 = longify("\r\nER");
-  var ERR2 = longify("\r\n> ");
-  
-  asm_isr(asm, VM.CPU.INTERRUPTS.user * 2);
-  asm_memcpy(asm);
-
-  asm.label('isr_reset').
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(VM.CPU.REGISTERS.DS, 0, VM.CPU.REGISTERS.INS).uint32(ds).
-      load(VM.CPU.REGISTERS.CS, 0, VM.CPU.REGISTERS.INS).uint32(cs).
-      call(0, VM.CPU.REGISTERS.CS).uint32('data_init').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dict_init').
-      call(0, VM.CPU.REGISTERS.CS).uint32('output_init').
-      call(0, VM.CPU.REGISTERS.CS).uint32('input_init').
-      sie().
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode-init').
-      call(0, VM.CPU.REGISTERS.CS).uint32('init-state').
-      //call(0, VM.CPU.REGISTERS.CS).uint32('eval-bootstrap').
-      //call(0, VM.CPU.REGISTERS.CS).uint32('forth_loop_start').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dumb_forth_loop_start').
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('reset');
-
-  asm.label('eval-bootstrap').
-      mov(TOS_REG, VM.CPU.REGISTERS.CS).
-      inc(TOS_REG).uint32('bootstrap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
-      ret();
-  asm.label('bootstrap').
-      bytes("\"secrets\"\"\n\r!!yeH\"^^.......B\x00").
-      uint32(TERMINATOR);
-  asm.label('boot-loop').
-      bytes("\"\n\rKO\"^^....\x00").
-      //bytes("(U[\n\rKO]^^....|$_D)\x00").
-      uint32(TERMINATOR);
-  
-  asm.label('input_data_position', 0).
-      label('output_data_position', 4).
-      label('waiting_for_input', 8).
-      label('waiting_for_output', 12).
-      label('heap_top', 16).
-      label('eval-word-size', 20).
-      label('dict', 24).
-      label('dict_end', 24 + 256 * dict_entry_size).
-      label('immediate-dict', 28 + 256 * dict_entry_size);
-
-  asm.label('data_init').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      mov(HEAP_REG, VM.CPU.REGISTERS.DS).
-      inc(HEAP_REG).uint32(DS_SIZE).
-      store(HEAP_REG, 0, VM.CPU.REGISTERS.DS).uint32('heap_top').
-      ret();
-  
   asm.label('on_input').
       push(VM.CPU.REGISTERS.R0).
       push(VM.CPU.REGISTERS.R1).
@@ -195,9 +143,26 @@ Forth.assembler = function(ds, cs, info) {
       store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.DS).uint32('input_data_position').
       ret();
 
+  asm.label('input_init');
+  // install isr
+  isr(asm, input_dev_irq, 'on_input');
+  asm.
+      // reset variables
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.DS).uint32('waiting_for_input').
+      call(0, VM.CPU.REGISTERS.CS).uint32('reset_input').
+      ret();
+
+}
+
+function output_asm(asm, output_dev_irq, output_dev_addr)
+{
   //
   // Output
   //
+
+  var output_dev_length = 8 + 1024;
+  var output_dev_buffer = 8;
 
   asm.label('on_output').
       push(VM.CPU.REGISTERS.R0).
@@ -260,1145 +225,2024 @@ Forth.assembler = function(ds, cs, info) {
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(4).
       call(0, VM.CPU.REGISTERS.CS).uint32('output_flush').
       ret();
-  
-  var isr_asm = new Assembler();
-  isr_asm.load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32(asm.resolve('on_input')).bytes([0, 0]);
-  var isr_bytes = isr_asm.assemble();
-  var isr = new Uint32Array(isr_bytes.buffer, isr_bytes.byteOffset);
 
-  asm.label('input_init').
-      // install isr
-      push(VM.CPU.REGISTERS.STATUS).
-      cie().
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(isr[0]).
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(input_dev_irq * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE).
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(isr[1]).
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(input_dev_irq * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE + VM.CPU.REGISTER_SIZE).
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.DS).uint32('waiting_for_input').
-      call(0, VM.CPU.REGISTERS.CS).uint32('reset_input').
-      pop(VM.CPU.REGISTERS.STATUS).
-      ret();
-
-  isr_asm = new Assembler();
-  isr_asm.load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32(asm.resolve('on_output')).bytes([0, 0]);
-  isr_bytes = isr_asm.assemble();
-  isr = new Uint32Array(isr_bytes.buffer, isr_bytes.byteOffset);
-
-  asm.label('output_init').
-      // install isr
-      push(VM.CPU.REGISTERS.STATUS).
-      cie().
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(isr[0]).
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(output_dev_irq * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE).
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(isr[1]).
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(output_dev_irq * VM.CPU.INTERRUPTS.ISR_BYTE_SIZE + VM.CPU.REGISTER_SIZE).
+  asm.label('output_init');
+  isr(asm, output_dev_irq, 'on_output');
+  asm.
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
       store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.DS).uint32('waiting_for_output').
       call(0, VM.CPU.REGISTERS.CS).uint32('reset_output').
-      pop(VM.CPU.REGISTERS.STATUS).
       ret();
+}
 
-  asm.label('reset').
-      int(0).
-      ret();
+Forth.assembler = function(ds, cs, info) {
+  var asm = new Assembler();
+
+  info = util.merge_options({
+    input: {
+      irq: 0xA,
+      addr: 0xFFFF1000
+    },
+    output: {
+      irq: 0xB,
+      addr: 0xFFFF2000
+    }
+  }, info);
   
-  asm.label('peek').
-      // TOS: address
-      load(TOS_REG, 0, TOS_REG).uint32(0).
-      ret();
+  var input_dev_irq = info.input.irq;
+  var input_dev_addr = info.input.addr;
 
-  asm.label('drop').
-      load(TOS_REG, 0, HEAP_REG).uint32(0);
-  asm.label('roll').
-      //inc(HEAP_REG).uint32(4).
-      dec(HEAP_REG).uint32(4).
-      ret();
+  var output_dev_irq = info.output.irq;
+  var output_dev_addr = info.output.addr;
 
-  asm.label('poke').
-      // R0: address
-      // DS+4: value
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      store(TOS_REG, 0, VM.CPU.REGISTERS.R0).uint32(0).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      ret();
-
-  asm.label('dup').
-      inc(HEAP_REG).uint32(4).
-      store(TOS_REG, 0, HEAP_REG).uint32(0).
-      ret();
-
-  asm.label('dup1').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, HEAP_REG).int32(4 * -1).
-      ret();
-
-  asm.label('dup2').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, HEAP_REG).uint32(4 * -2).
-      ret();
-
-  asm.label('2dup').
-      // (a b) -> (a b a b)
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup1').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup1').
-      ret();
+  var ops = [];
+  var fns = [];
   
-  asm.label('swap').
-      load(VM.CPU.REGISTERS.R1, 0, HEAP_REG).uint32(0).
-      store(TOS_REG, 0, HEAP_REG).uint32(0).
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      ret();
+  var STACK_SIZE = 4*1024;
+  var DS_SIZE = 1024*2;
+  var HEAP_REG = VM.CPU.REGISTERS.DS - 1;
+  var EVAL_IP_REG = HEAP_REG - 1;
+  var STATE_REG = HEAP_REG - 2;
+  var PARAM_REG = HEAP_REG - 3;
+  var TOS_REG = HEAP_REG - 4;
+  var DICT_REG = HEAP_REG - 4;
+  var FP_REG = HEAP_REG - 5;
 
-  asm.label('swap2').
-      // c b a -> a b c
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      load(TOS_REG, 0, HEAP_REG).int32(-4).
-      store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).int32(-4).
-      ret();
-  
-  asm.label('rot').
-      // (a b c) -> (c a b)
-      // c b a
-      load(VM.CPU.REGISTERS.R0, 0, HEAP_REG).int32(-4). // c
-      mov(VM.CPU.REGISTERS.R1, TOS_REG). // a
-      mov(TOS_REG, VM.CPU.REGISTERS.R0). // c -> TOS
-      store(VM.CPU.REGISTERS.R1, 0, HEAP_REG).int32(-4). // a -> Data-4
-      ret();
-  
-  asm.label('write').
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('output_write_byte').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      ret();
+  asm_isr(asm, VM.CPU.INTERRUPTS.user * 2);
+  asm_memcpy(asm);
 
-  asm.label('write_word').
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
+  function defop(name, fn) {
+    ops.push(name);
+    return fn(asm.label(name));
+  }
+
+  function deffn(name, fn) {
+    fns.push(name);
+    return fn(
+      asm.label(name).
+          load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(name + '-ops').
+          push(VM.CPU.REGISTERS.R0).
+          load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call').
+          label(name + '-ops')
+    );
+  }
+
+  asm.label('isr_reset').
+      call(0, VM.CPU.REGISTERS.CS).uint32('data_init').
+      call(0, VM.CPU.REGISTERS.CS).uint32('output_init').
+      call(0, VM.CPU.REGISTERS.CS).uint32('input_init').
+      sie().
+      call(0, VM.CPU.REGISTERS.CS).uint32('eval-init').
+      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.CS).
+      inc(VM.CPU.REGISTERS.R0).uint32('bootstrap').
+      push(VM.CPU.REGISTERS.R0).
+      call(0, VM.CPU.REGISTERS.CS).uint32('outer-execute').
+      //call(0, VM.CPU.REGISTERS.CS).uint32('bootstrap').
+      call(0, VM.CPU.REGISTERS.CS).uint32('goodbye').
+      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('isr_reset');
+  
+  asm.label('goodbye').
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(BYE).
       call(0, VM.CPU.REGISTERS.CS).uint32('output_write_word').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      ret();
-
-  // fixme input can't be read when the input device's buffer is used
-  // for the evaluation buffer
-  
-  asm.label('read').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      call(0, VM.CPU.REGISTERS.CS).uint32('read_byte').
-      mov(TOS_REG, VM.CPU.REGISTERS.R0).
       ret();
   
-  asm.label('selfie').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, PARAM_REG).
-      ret();
+  asm.label('input_data_position', 0).
+      label('output_data_position', 4).
+      label('waiting_for_input', 8).
+      label('waiting_for_output', 12).
+      label('heap_top', 16);
 
-  asm.label('zero').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      ret();
-
-  asm.label('ifthen').
-      // then else condition
+  asm.label('data_init').
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
       load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R1).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('ifthen_else', true).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('execute').
-      inc(VM.CPU.REGISTERS.IP).uint32('ifthen_end', true).
-      label('ifthen_else').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('execute').
-      label('ifthen_end').
-      ret();
-
-  asm.label('ifthen2').
-      // condition then else
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap2').
-      call(0, VM.CPU.REGISTERS.CS).uint32('ifthen').
-      ret();
-  
-  asm.label('equal').
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      cmpi(VM.CPU.REGISTERS.R0, TOS_REG).
+      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(0).
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(TOS_REG, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32(1).
-      ret();
-
-  asm.label('read_string').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap'). // 0xFFFF, terminator
-      label('read_string_loop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('read'). // 0xFFFF, terminator, new byte
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap'). // 0xFFFF, new byte, terminator
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // 0xFFFF, new byte, terminator, term
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup2').  // 0xFFFF, new byte, terminator, term, new byte
-      call(0, VM.CPU.REGISTERS.CS).uint32('equal'). // 0xFFFF, new byte, terminator, equality
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // next load erases R0
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0xFE). // loop
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap'). // 0xFFFF, new byte, terminator, then, equality
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // next load erases R0
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0xFD). // done
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap'). // 0xFFFF, new byte, terminator, then, else, equality
-      call(0, VM.CPU.REGISTERS.CS).uint32('ifthen').
-      ret();
-
-  asm.label('read_string_done').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('here').
-      ret();
-
-  // read_string but uses the terminator in the definition's parameter
-  asm.label('read_string_reg_term').
-      //push(PARAM_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('here').
-      label('read_string_reg_term_loop').
-      push(PARAM_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('read'). // here, new byte
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // here, new byte, new byte
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.SP).uint32(0).
-      //load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR). // here, byte, byte, term
-      call(0, VM.CPU.REGISTERS.CS).uint32('equal'). // here, byte, equality
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // next load erases TOS
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0xFE). // done
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap'). // here, new byte, then, equality
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // next load erases TOS
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0xFD). // loop
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap'). // here, new byte, then, else, equality
-      call(0, VM.CPU.REGISTERS.CS).uint32('ifthen').
-      pop(PARAM_REG).
-      ret();
-
-  asm.label('read_string_reg_term_preloop').
-      // here, new byte
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      // new byte, here
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('read_string_reg_term_loop').
+      load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      load(VM.CPU.REGISTERS.DS, 0, VM.CPU.REGISTERS.INS).uint32(ds).
+      load(VM.CPU.REGISTERS.CS, 0, VM.CPU.REGISTERS.INS).uint32(cs).
+      mov(HEAP_REG, VM.CPU.REGISTERS.DS).
+      inc(HEAP_REG).uint32(DS_SIZE).
+      store(HEAP_REG, 0, VM.CPU.REGISTERS.DS).uint32('heap_top').
       ret();
   
-  asm.label('read_string_reg_term_done').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR). // bytes, here, term
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap'). // bytes, term, here
+  input_asm(asm, input_dev_irq, input_dev_addr);
+  output_asm(asm, output_dev_irq, output_dev_addr);
+
+  asm.label('eval-init').
+      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      load(DICT_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
+      mov(FP_REG, VM.CPU.REGISTERS.SP).
       ret();
 
-  asm.label('eip').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, EVAL_IP_REG).
-      ret();
-
-  asm.label('chere').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.SP).
-      ret();
-
-  asm.label('here').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, HEAP_REG).
-      inc(TOS_REG).uint32(4).
-      ret();
-
-  asm.label('forget').
-      mov(HEAP_REG, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      ret();
-
-  asm.label('rpush').
+  asm.label('outer-execute').
+      // swap return addr and EIP
       pop(VM.CPU.REGISTERS.R0).
-      push(TOS_REG).
+      pop(VM.CPU.REGISTERS.R1).
       push(VM.CPU.REGISTERS.R0).
+      //push(VM.CPU.REGISTERS.R1).
+      //load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call').
+      mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R1).
       ret();
 
-  asm.label('rpop').
-      pop(VM.CPU.REGISTERS.R0).
-      pop(TOS_REG).
-      push(VM.CPU.REGISTERS.R0).
-      ret();
+  defop('jump', function(asm) {
+    asm.pop(EVAL_IP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+
+  defop('eip', function(asm) {
+    asm.push(EVAL_IP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
   
-  asm.label('rswap').
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
-      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(8).
-      store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(4).
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(8).
-      ret();
+  defop('call', function(asm) {
+    asm.push(EVAL_IP_REG).
+        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.SP).uint32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin').
+        ret();
+  });
   
-  asm.label('stash').
-      mov(PARAM_REG, TOS_REG).
-      ret();
-
-  asm.label('param').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, PARAM_REG).
-      ret();
-
-  asm.label('nopper').
-      ret();
-
-  asm.label('bitshift-left').
-      // R0: value
-      // D+0: amount
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      cls(VM.CPU.STATUS.NUMERICS).
-      bsl(TOS_REG, VM.CPU.REGISTERS.STATUS).
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      ret();
-
-  asm.label('literal-byte').
-      load(VM.CPU.REGISTERS.R0, 0, EVAL_IP_REG).uint32(0).
-      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0xFF).
-      and(VM.CPU.REGISTERS.R1).
-      push(VM.CPU.REGISTERS.R0).
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-inc-ip').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      pop(TOS_REG).
-      ret();
-
-  asm.label('literal-long').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, EVAL_IP_REG).uint32(0).
-      //and(PARAM_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(4).
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-inc-ip-by').
-      ret();
+  defop('begin', function(asm) {
+    asm.push(FP_REG).
+        mov(FP_REG, VM.CPU.REGISTERS.SP).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
   
-  /*
-  asm.label('literal_shift').
-      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(8).
-      cls(VM.CPU.STATUS.NUMERICS).
-      bsl(VM.CPU.REGISTERS.R2, VM.CPU.REGISTERS.STATUS).
-      mov(PARAM_REG, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      cls(VM.CPU.STATUS.NUMERICS).
-      addi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
+  asm.label('quit').
+      // actually return from call
+      load(VM.CPU.REGISTERS.IP, 0, FP_REG).uint32(12).
       ret();
-*/
-  
-  asm.label('literal_shift').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32('literal_shift_def').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
-      ret().
-      label('literal_shift_def').
-      bytes("'\x08%L+\x00"); /* lit 8 swap bsl-left + */
-  /*
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(8).
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('bitshift-left').
-      call(0, VM.CPU.REGISTERS.CS).uint32('add').
-*/
-      
-  asm.label('literal-script-long').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32('literal-script-long_def').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
-      ret().
-      label('literal-script-long_def').
-      bytes("\xA3\xA3\xA3\x00"); /* lit-shift lit-shift lit-shift */
 
-  /*
-  asm.label('literal').
-      call(0, VM.CPU.REGISTERS.CS).uint32('read').
-      call(0, VM.CPU.REGISTERS.CS).uint32('read').
-      call(0, VM.CPU.REGISTERS.CS).uint32('read').
-      call(0, VM.CPU.REGISTERS.CS).uint32('read').
-      call(0, VM.CPU.REGISTERS.CS).uint32('literal_shift').
-      call(0, VM.CPU.REGISTERS.CS).uint32('literal_shift').
-      call(0, VM.CPU.REGISTERS.CS).uint32('literal_shift').
-      ret();
+  defop('exit', function(asm) {
+    asm.
+        load(EVAL_IP_REG, 0, FP_REG).int32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('end');
+  });
+  
+  defop('end', function(asm) {
+    asm.mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+
+  defop('next', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, EVAL_IP_REG).int32(0).
+        inc(EVAL_IP_REG).uint32(4).
+        //callr(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.CS).
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(VM.CPU.REGISTERS.CS, VM.CPU.REGISTERS.STATUS).
+        mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R0).
+        ret();
+  });
+  
+  var FRAME_SIZE = 4 * 4;
+
+  defop('returnN', function(asm) {
+    asm.
+        // copy values between FP and SP up over the frame
+        // exit frame
+        pop(VM.CPU.REGISTERS.R0). // N
+        mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.SP).
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        pop(VM.CPU.REGISTERS.R2).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('shift-stack');
+  });
+  
+  defop('shift-stack', function(asm) {
+    asm.
+        // R1: old SP
+        // R0: number of bytes
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
+        label('shift-stack-loop').
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('next', true).
+        dec(VM.CPU.REGISTERS.R0).uint32(4).
+        load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.R0).uint32(0).
+        push(VM.CPU.REGISTERS.R2).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('shift-stack-loop');
+  });
+  
+  defop('return1', function(asm) {
+    asm.
+        //load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(4).
+        //push(VM.CPU.REGISTERS.R0).
+        //load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('returnN').
+        // save a return value
+        pop(VM.CPU.REGISTERS.R0).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // overwrite call's argument
+        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+
+  defop('return2', function(asm) {
+    asm.
+        //load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(4).
+        //push(VM.CPU.REGISTERS.R0).
+        //load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('returnN').
+        // save a return value
+        pop(VM.CPU.REGISTERS.R0).
+        pop(VM.CPU.REGISTERS.R1).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // overwrite call's argument
+        store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+
+  defop('return-1', function(asm) {
+    asm.
+        // exit frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        pop(VM.CPU.REGISTERS.R0).
+        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('return0', function(asm) {
+    asm.
+        // exit frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('tailcall', function(asm) {
+    asm.
+        // save where to call
+        pop(VM.CPU.REGISTERS.R0).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // overwrite call's argument
+        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call');
+  });
+  
+  defop('call-op', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.IP);
+  });
+  
+  defop('call-param', function(asm) {
+    asm.
+        push(EVAL_IP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call');
+  });
+  
+  defop('call-op-param', function(asm) {
+    asm.
+        push(VM.CPU.REGISTERS.IP).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call');
+  });
+  
+  defop('tailcall-param', function(asm) {
+    asm.
+        push(EVAL_IP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('tailcall');
+  });
+  
+  defop('tailcall-op', function(asm) {
+    asm.
+        // save where to call
+        pop(VM.CPU.REGISTERS.R0).
+        //pop(VM.CPU.REGISTERS.R1).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // overwrite call's argument
+        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        //store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        //push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-op');
+  });
+  
+  defop('literal', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, EVAL_IP_REG).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        inc(EVAL_IP_REG).uint32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+
+  defop('direct-param', function(asm) {
+    asm.
+        // get the return address
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(0).
+        // load the value
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R0).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        // move it up a cell
+        inc(VM.CPU.REGISTERS.R0).uint32(4).
+        // update it
+        store(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(0).
+        // done
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+
+  defop('read-byte', function(asm) {
+    asm.
+        call(0, VM.CPU.REGISTERS.CS).uint32('read_byte').
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+  
+  defop('write-byte', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        call(0, VM.CPU.REGISTERS.CS).uint32('output_write_byte').
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+  
+  defop('write-word', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        call(0, VM.CPU.REGISTERS.CS).uint32('output_write_word').
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+
+  defop('here', function(asm) {
+    asm.
+        push(VM.CPU.REGISTERS.SP).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('swap', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        pop(VM.CPU.REGISTERS.R1).
+        push(VM.CPU.REGISTERS.R0).
+        push(VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('drop', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('dup', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+  
+  defop('dup1', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+  
+  defop('dup2', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(8).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+  
+  defop('2dup', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('peek', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R0).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('poke', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0). // addr
+        pop(VM.CPU.REGISTERS.R1). // value
+        store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.R0).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('equals', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        pop(VM.CPU.REGISTERS.R1).
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        load(VM.CPU.REGISTERS.R0, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32(1).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+  
+  var math_ops = { addi: 'int-add',
+                   subi: 'int-sub',
+                   muli: 'int-mul',
+                   divi: 'int-div',
+                   modi: 'int-mod'
+                 }
+  for(var k in math_ops) {
+    var op = k;
+    var label = math_ops[k];
+
+    defop(label, function(asm) {
+      asm.
+          pop(VM.CPU.REGISTERS.R1).
+          pop(VM.CPU.REGISTERS.R0).
+          cls(VM.CPU.STATUS.NUMERICS);
+      asm[op](VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS);
+      asm.push(VM.CPU.REGISTERS.R0).
+          load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+    });
+  }
+
+  defop('logand', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R1).
+        pop(VM.CPU.REGISTERS.R0).
+        and(VM.CPU.REGISTERS.R1).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('logior', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R1).
+        pop(VM.CPU.REGISTERS.R0).
+        or(VM.CPU.REGISTERS.R1).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('<', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R1).
+        pop(VM.CPU.REGISTERS.R0).
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        load(VM.CPU.REGISTERS.R0, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('<=', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R1).
+        pop(VM.CPU.REGISTERS.R0).
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        load(VM.CPU.REGISTERS.R0, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
+        load(VM.CPU.REGISTERS.R0, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32(1).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('>', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R1).
+        pop(VM.CPU.REGISTERS.R0).
+        cmpi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        load(VM.CPU.REGISTERS.R0, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('>=', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R1).
+        pop(VM.CPU.REGISTERS.R0).
+        cmpi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        load(VM.CPU.REGISTERS.R0, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
+        load(VM.CPU.REGISTERS.R0, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32(1).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('ifthenjump', function(asm) { // condition addr
+    asm.
+        pop(VM.CPU.REGISTERS.R2).
+        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('next').
+        mov(EVAL_IP_REG, VM.CPU.REGISTERS.R2).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next').
+        ret();
+  });
+  
+  defop('ifthenop', function(asm) { // condition addr
+    asm.pop(VM.CPU.REGISTERS.R2).
+        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('next').
+        mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R2).
+        ret();
+  });
+  
+  defop('ifthencall', function(asm) {
+    asm.
+        // condition addr
+        pop(VM.CPU.REGISTERS.R2).
+        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('next').
+        push(VM.CPU.REGISTERS.R2).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call').
+        ret();
+  });
+  
+  defop('pause', function(asm) {
+    asm.
+        cie().
+        halt().
+        sie().
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('args', function(asm) {
+    asm.mov(VM.CPU.REGISTERS.R0, FP_REG).
+        inc(VM.CPU.REGISTERS.R0).uint32(FRAME_SIZE - 4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('arg0', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE - 4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('arg1', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('arg2', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE + 4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('arg3', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE + 8).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('local0', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(-4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('localn', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(4).
+        cls(VM.CPU.STATUS.NUMERICS).
+        muli(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
+        mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.R0).
+        mov(VM.CPU.REGISTERS.R0, FP_REG).
+        cls(VM.CPU.STATUS.NUMERICS).
+        subi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
+        dec(VM.CPU.REGISTERS.R0).uint32(4).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R0).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('store-local0', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        store(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(-4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('drop-frame', function(asm) {
+    asm.
+        inc(VM.CPU.REGISTERS.SP).uint32(FRAME_SIZE).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('dpush', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        inc(HEAP_REG).uint32(4).
+        store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('dpop', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
+        dec(HEAP_REG).uint32(4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+
+  defop('ddrop', function(asm) {
+    asm.
+        dec(HEAP_REG).uint32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+
+  defop('dmove', function(asm) {
+    asm.pop(HEAP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('dhere', function(asm) {
+    asm.
+        push(HEAP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('current-frame', function(asm) {
+    asm.
+        push(FP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('dict', function(asm) {
+    asm.
+        push(DICT_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('set-dict', function(asm) {
+    asm.
+        pop(DICT_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+
+  defop('not', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.R1, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32(1).
+        push(VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('lognot', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        not(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+
+  defop('doop', function(asm) {
+    asm.load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0x1234).
+        push(VM.CPU.REGISTERS.R0).
+        cie().
+        halt().
+        sie().
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  deffn('bootstrap', function(asm) {
+    asm.
+        //uint32('begin').
+        uint32('literal').uint32(HELO).
+        uint32('write-word').
+        uint32('dict-init').
+        uint32('bootstrap-loop').
+        //uint32('end').
+        uint32('quit').
+        uint32('exit');
+  });
+
+  /* later
+define
+  next-word eip add-dict
+  lit ; next-until jump
+
+  asm.uint32('define').
+      uint32('write-ok').
+uint32('docode').
+      uint32('literal').uint32(OK1).
+      uint32('write-word').
+      uint32('return0').
+      uint32(';');
+
+  asm.uint32('define').
+      uint32('zero').
+      uint32('literal').uint32(OK1).
+      uint32('return1').
+      uint32(';');
   */
   
-  var Dictionary = {
-    '\x03': [ 'isr_reset', 0 ],
-    '\x06': [ 'forth_loop_start', 0 ],
-    '\x04': [ 'input_flush', 0 ],
-    '\x07': [ 'dumb_forth_loop_start', 0 ],
-    '@': [ 'here', 0 ],
-    'F': [ 'forget', 0 ],
-    '(': [ 'eip', 0 ],
-    ')': [ 'eval-jump', 0 ],
-    'Q': [ 'quit', 0 ],
-    'J': [ 'call', 0 ],
-    'G': [ 'eval_words', 0 ],
-    'K': [ 'exec_words', 0 ],
-    'F': [ 'peek', 0 ],
-    'S': [ 'poke', 0 ],
-    '^': [ 'drop', 0 ],
-    '~': [ 'dup', 0 ],
-    '%': [ 'swap', 0 ],
-    '?': [ 'ifthen2', 0 ],
-    'U': [ 'rpush', 0 ],
-    'D': [ 'rpop', 0 ],
-    ':': [ 'define-sym', 0 ],
-    'V': [ 'set-sym-value', 0 ],
-    'P': [ 'set-sym-param', 0 ],
-    '$': [ 'lookup-addr', 0 ],
-    'Z': [ 'zero', 0 ],
-    '=': [ 'equal', 0 ],
-    '.': [ 'write', 0 ],
-    //',': [ 'write_word', 0 ],
-    '\'': [ 'quote-mode', 0xFF ],
-    ',': [ 'literal-byte', 0 ],
-    '|': [ 'read', 0 ],
-    'I': [ 'input_flush', 0 ],
-    //'\"': [ 'read_string_reg_term', '\"'.charCodeAt(0) ],
-    //'\xFD': [ 'read_string_reg_term_preloop', '\"'.charCodeAt(0) ],
-    //'\xFE': [ 'read_string_reg_term_done', 0 ],
-    '#': [ 'literal-script-long', 0 ],
-    '\xA3': [ 'literal_shift', 0 ],
-    'L': [ 'bitshift-left', 0 ],
-    '+': [ 'int-add', 0 ],
-    '-': [ 'int-sub', 0 ],
-    '*': [ 'int-mul', 0 ],
-    '/': [ 'int-div', 0 ],
-    '<': [ 'int-lt', 0 ],
-    '>': [ 'int-gt', 0 ],
-    '/': [ 'stash', 0 ],
-    '\\': [ 'param', 0 ],
-    '\n': [ 'nopper', 0 ],
-    '\r': [ 'nopper', 0 ],
-    '_': [ 'execute', 0 ],
-    '\"': [ 'literal-mode', '\"'.charCodeAt(0) ],
-    '[': [ 'indirect-mode', ']'.charCodeAt(0) ],
-    '{': [ 'compile-mode', '}'.charCodeAt(0) ],
-    'R': [ 'rot', 0 ],
-    'B': [ 'eval_byte_param', 'boot-loop' ],
-  };
+  deffn('write-ok', function(asm) {
+    asm.
+        uint32('literal').uint32(OK1).
+        uint32('write-word').
+        uint32('return0');
+  });
+  deffn('write-err', function(asm) {
+    asm.
+        uint32('literal').uint32(ERR1).
+        uint32('write-word').
+        uint32('return0');
+  });
 
-  asm.label('dict_init').
-      // R1: ptr to dict
-      // R2: counter
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      push(VM.CPU.REGISTERS.R0).
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.R0).
-      load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      label('dict_init_loop').
-      load(VM.CPU.REGISTERS.R3, 0, VM.CPU.REGISTERS.INS).uint32(256).
-      cmpi(VM.CPU.REGISTERS.R2, VM.CPU.REGISTERS.R3).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('dict_init_loop_done', true).
-      // loop body
-      // copy ops
-      load(VM.CPU.REGISTERS.R3, 0, VM.CPU.REGISTERS.INS).uint32('selfie').
-      store(VM.CPU.REGISTERS.R3, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      store(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.R1).uint32(4).
-      // inc counters
-      inc(VM.CPU.REGISTERS.R2).uint32(1).
-      inc(VM.CPU.REGISTERS.R1).uint32(dict_entry_size).
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('dict_init_loop').
-      label('dict_init_loop_done').
-      // setup explicit entries
-      pop(VM.CPU.REGISTERS.R1);
-
-  for(var op in Dictionary) {
-    var sym = Dictionary[op][0];
-    var param = Dictionary[op][1];
-    var op = op.charCodeAt(0);
-    asm.load(VM.CPU.REGISTERS.R3, 0, VM.CPU.REGISTERS.INS).uint32(sym).
-        store(VM.CPU.REGISTERS.R3, 0, VM.CPU.REGISTERS.R1).uint32(op * dict_entry_size).
-        load(VM.CPU.REGISTERS.R3, 0, VM.CPU.REGISTERS.INS).uint32(param).
-        store(VM.CPU.REGISTERS.R3, 0, VM.CPU.REGISTERS.R1).uint32(4 + op * dict_entry_size);
-  }
-
-  asm.ret();
-
-  asm.label('state-dict').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, STATE_REG).uint32(4).
-      ret();
+  deffn('lit', function(asm) {
+    asm.uint32('read-token').uint32('return1');
+  });
   
-  // lookup
-  asm.label('lookup-addr').
-      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict');
-  asm.label('lookup-addr-dict').
-      // Stack: symbol dict
-      mov(VM.CPU.REGISTERS.R2, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      mov(VM.CPU.REGISTERS.R1, TOS_REG).
-      // R1: symbol
-      // R2: dictionary address
-      //load(VM.CPU.REGISTERS.R2, 0, STATE_REG).uint32(4).
-      // R0: entry offset
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(dict_entry_size).
-      cls(VM.CPU.STATUS.NUMERICS).
-      muli(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
-      cls(VM.CPU.STATUS.NUMERICS).
-      addi(VM.CPU.REGISTERS.R2, VM.CPU.REGISTERS.STATUS).
-      // TOS: entry address
-      mov(TOS_REG, VM.CPU.REGISTERS.R0).
-      ret();
-
-  asm.label('lookup-sym').
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict');
-  asm.label('load-entry').
-      // load entry value and param
-      load(PARAM_REG, 0, TOS_REG).uint32(4).
-      load(TOS_REG, 0, TOS_REG).uint32(0).
-      ret();
+  deffn('bootstrap-loop', function(asm) {
+    asm.label('bootstrap-loop-inner').
+        uint32('write-ok').
+        uint32('literal').uint32(OK2).
+        uint32('write-word').
+        uint32('read-token').
+        //uint32('write-string').
+        //uint32('write-string-rev').
+        uint32('dict').
+        uint32('dict-lookup'). // fixme: dict and token are on stack during call, tail call needs to eat caller's frame?
+        uint32('swap').uint32('drop').
+        uint32('dup').
+        uint32('not').
+        uint32('literal').uint32('bootstrap-loop-not-found').
+        uint32('ifthenjump').
+        uint32('swap').uint32('drop').
+        uint32('call-indirect').
+        uint32('literal').uint32('bootstrap-loop-inner').
+        uint32('jump').
+        uint32('exit');
+    asm.label('bootstrap-loop-not-found').
+        uint32('drop').
+        uint32('literal').uint32('bootstrap-loop-inner').
+        uint32('jump');
+  });
+  deffn('boo', function(asm) {
+    asm.uint32('literal').uint32(longify('\nBOO')).
+        uint32('write-word').
+        uint32('literal').uint32(0).
+        uint32('literal').uint32('boo-done').
+        uint32('ifthenjump').
+        uint32('write-err').
+        label('boo-done').
+        uint32('write-ok').
+        uint32('literal').uint32(0x8765).
+        uint32('return1');
+  });
   
-  // define
-  asm.label('set-sym-value').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, STATE_REG).uint32(4);
-  asm.label('set-sym-value-dict').
-      // value, sym, dict
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict').
-      // value, entry
-      call(0, VM.CPU.REGISTERS.CS).uint32('poke').
-      ret();
+  deffn('make-dict', function(asm) {
+    // name code data link => entry-ptr
+    asm.
+        uint32('arg3'). // name
+        uint32('dpush').
+        uint32('dhere').
+        uint32('arg2'). // code
+        uint32('dpush').
+        uint32('arg1'). // data
+        uint32('dpush').
+        uint32('arg0'). // link
+        uint32('dpush').
+        uint32('return1'); // dhere
+  });
+  deffn('add-dict', function(asm) {
+    // name code data
+    asm.
+        uint32('arg2').
+        uint32('arg1').
+        uint32('arg0').
+        uint32('dict').
+        uint32('make-dict').
+        uint32('set-dict').
+        uint32('return0');
+  });
+  deffn('dict-entry-name', function(asm) {
+    asm.uint32('arg0').
+        uint32('peek').
+        uint32('return1');
+  });
+  deffn('dict-entry-code', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+').
+        uint32('peek').
+        uint32('return1');
+  });
+  deffn('dict-entry-data', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+2').
+        uint32('peek').
+        uint32('return1');
+  });
+  deffn('set-dict-entry-data', function(asm) {
+    // value entry
+    asm.uint32('arg1').
+        uint32('arg0').
+        uint32('cell+2').
+        uint32('swap').uint32('drop').
+        uint32('poke').
+        uint32('return0');
+  });
+  deffn('dict-entry-next', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+3').
+        uint32('peek').
+        uint32('return1');
+  });
+  deffn('dict-lookup', function(asm) {
+    asm.
+        uint32('arg0').
+        label('dict-lookup-loop').
+        uint32('terminator?').
+        uint32('literal').uint32('dict-lookup-fail').
+        uint32('ifthenjump').
+        uint32('dict-entry-name').
+        uint32('arg1').
+        uint32('string-equal').
+        uint32('literal').uint32('dict-lookup-found').
+        uint32('ifthenjump').
+        uint32('drop').
+        uint32('drop').
+        uint32('dict-entry-next').
+        uint32('literal').uint32('dict-lookup-loop').
+        uint32('jump');
+    asm.label('dict-lookup-fail').
+        uint32('literal').uint32(0).
+        uint32('return1');
+    asm.label('dict-lookup-found').
+        //uint32('arg0').
+        uint32('drop').
+        uint32('drop').
+        uint32('return1');
+  });
 
-  asm.label('set-sym-param').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, STATE_REG).uint32(4);
-  asm.label('set-sym-param-dict').
-      // value, sym, dict
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict').
-      inc(TOS_REG).uint32(4).
-      // value, entry+4
-      call(0, VM.CPU.REGISTERS.CS).uint32('poke').
-      ret();
-
-  asm.label('set-sym-eval').
-      // sym dict
-      call(0, VM.CPU.REGISTERS.INS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32('eval_param').
-      // sym dict ptr
-      call(0, VM.CPU.REGISTERS.CS).uint32('rot').
-      // ptr dict sym
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      // ptr sym dict
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-value-dict').
-      ret();
-
-  asm.label('define-sym').
-      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict');
-  asm.label('define-sym-dict').
-      // (ptr sym dict)
-      call(0, VM.CPU.REGISTERS.CS).uint32('2dup').
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-eval').
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-sym-param-dict').
-      ret();
-
-  asm.label('execute').
-      // TOS: sym
-      // Data: call args
-      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict');
-  asm.label('execute-dict').
-      // call args sym dict
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict');
-  asm.label('execute-addr').
-      call(0, VM.CPU.REGISTERS.CS).uint32('load-entry');
-  asm.label('call').
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      cls(VM.CPU.STATUS.NUMERICS).
-      addi(VM.CPU.REGISTERS.CS, VM.CPU.REGISTERS.STATUS).
-      mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R0).
-      // unlikely, but
-      ret();
-
-  asm.label('set-state').
-      mov(STATE_REG, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      ret();
-  asm.label('enter-state').
-      pop(VM.CPU.REGISTERS.R0). // return addr
-      push(STATE_REG).
-      push(VM.CPU.REGISTERS.R0).
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-state').
-      ret();
-
-  asm.label('exit-state').
-      pop(VM.CPU.REGISTERS.R0).
-      pop(STATE_REG).
-      push(VM.CPU.REGISTERS.R0).
-      ret();
-
-  //
-  // Eval mode
-  // Evaluates each token as it is encountered.
-  //
+  deffn('dict-each', function(asm) {
+    asm.
+        uint32('arg0').
+        label('dict-each-loop').
+        uint32('terminator?').
+        uint32('literal').uint32('dict-each-done').
+        uint32('ifthenjump').
+        uint32('arg1').
+        uint32('call-op').
+        uint32('swap').uint32('drop').
+        uint32('dict-entry-next').
+        uint32('literal').uint32('dict-each-loop').
+        uint32('jump');
+    asm.label('dict-each-done').
+        uint32('return0');
+  });
   
-  asm.label('init-state').
-      mov(STATE_REG, VM.CPU.REGISTERS.CS).
-      inc(STATE_REG).uint32('eval-state').
-      ret();
+  defop('rot', function(asm) {
+    // a b c -> c a b
+    asm.load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(8).
+        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(8).
+        store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+
+  defop('call-indirect', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.R0).uint32(4);
+  });
+
+  deffn('dict-call', function(asm) {
+    asm.uint32('arg1').
+        uint32('arg0').
+        uint32('dict-lookup').
+        uint32('dup').
+        uint32('literal').uint32('dict-call-go').
+        uint32('ifthenjump').
+        uint32('arg1').
+        uint32('return1').
+        label('dict-call-go').
+        // todo drop the args
+        uint32('literal').uint32('call-indirect').
+        uint32('tailcall-op');
+  });
   
-  asm.label('eval-mode-init').
-      // init state state
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
-      inc(VM.CPU.REGISTERS.R1).uint32('eval-state').
-      // set exec field
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('execute').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      // set param field
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
-      ret();
-
-  asm.label('eval-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-mode-init').
-      // change state
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      ret();
-
-  asm.label('eval-state').
-      uint32('execute'). // placeholders as offsets added later
-      uint32('dict').
-      uint32(0xFF);
-
-  //
-  // Exec indirect mode
-  // Evaluates a list of dictionary addresses.
-  //
+  deffn('dict-init', function(asm) {
+    asm.
+        uint32('literal').uint32('dictionary').
+        uint32('peek').
+        uint32('set-dict').
+        uint32('return0');
+  });
   
-  asm.label('exec-execute').
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('exec-done', true).
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('execute-addr');
-  asm.label('exec-done').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
-  asm.label('exec-mode').
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
-      inc(VM.CPU.REGISTERS.R1).uint32('exec-state').
-      // init state fields
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('exec-execute').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
-      // change state
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      ret();
-
-  asm.label('exec-state').
-      uint32('execute-addr').
-      uint32('dict').
-      uint32(0xFFFFFFFF);
-
-  //
-  // Indirect mode
-  // Replaces the tokens with their dictionary entry addresses.
-  //
+  deffn('string-equal', function(asm) {
+    asm.
+        // ptr-a ptr-b
+        // lengths
+        uint32('arg0').
+        uint32('peek').
+        uint32('arg1').
+        uint32('peek').
+        uint32('equals').
+        // elements
+        uint32('literal').uint32('string-equal-cmp').
+        uint32('ifthenjump').
+        // lengths are different
+        uint32('literal').uint32(0).
+        uint32('return1');
+    asm.label('string-equal-cmp').
+        uint32('arg0').
+        uint32('arg1');
+    asm.label('string-equal-loop').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('swap').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('swap').
+        // read elements
+        uint32('2dup').
+        uint32('peek').
+        uint32('swap').
+        uint32('peek').
+        // at the terminators?
+        uint32('2dup').
+        uint32('literal').uint32(TERMINATOR).
+        uint32('equals').
+        uint32('swap').
+        uint32('literal').uint32(TERMINATOR).
+        uint32('equals').
+        uint32('logand').
+        uint32('literal').uint32('string-equal-done').
+        uint32('ifthenjump').
+        // elements match?
+        uint32('equals').
+        uint32('literal').uint32('string-equal-loop').
+        uint32('ifthenjump').
+        // not equal
+        uint32('literal').uint32(0).
+        uint32('return1');
+    asm.label('string-equal-done').
+        uint32('literal').uint32(1).
+        uint32('return1');
+  });
   
-  asm.label('lookup-indirect').
-      load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(12).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('indirect-done', true).
-      call(0, VM.CPU.REGISTERS.CS).uint32('state-dict').
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-addr-dict').
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      ret();
-  asm.label('indirect-done').
-      // terminate string
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
-      // swap pointer and terminator
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      // exit state
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
-  asm.label('indirect-mode'). // literal mode but with lookup
-      call(0, VM.CPU.REGISTERS.CS).uint32('here').
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
-      inc(VM.CPU.REGISTERS.R1).uint32('indirect-state').
-      // set state fields
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('lookup-indirect').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
-      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(12).
-      // change state
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      ret();
-
-  asm.label('indirect-state').
-      uint32('lookup-indirect').
-      uint32('dict').
-      uint32(0xFF).
-      uint32(PARAM_REG);
-
-  //
-  // Literal mode
-  // Pushes tokens straight to the data stack.
-  //
-
-  asm.label('execute-immediate').
-      // todo lookup immediates in a dictionary
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('\''.charCodeAt(0)).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('execute').
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('['.charCodeAt(0)).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('execute').
-      ret();
+  deffn('write-string', function(asm) {
+    asm.
+        //uint32('dup').
+        uint32('arg0').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('literal').uint32('write-string-loop').
+        uint32('jump');
+    asm.label('write-string-loop').
+        uint32('dup').
+        uint32('peek').
+        uint32('dup').
+        uint32('literal').uint32(TERMINATOR).
+        uint32('equals').
+        uint32('literal').uint32('write-string-done').
+        uint32('ifthenjump').
+        uint32('write-byte').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('literal').uint32('write-string-loop').
+        uint32('jump');
+    asm.label('write-string-done').
+        uint32('drop').
+        uint32('drop').
+        uint32('return0');
+  });
   
-  asm.label('lookup-literal-mode').
-      load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(12).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('literal-mode-done', true).
-      call(0, VM.CPU.REGISTERS.CS).uint32('execute-immediate').
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      ret();
-  asm.label('literal-mode-done').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
-  asm.label('literal-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('here').
-      // init state state
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
-      inc(VM.CPU.REGISTERS.R1).uint32('literal-state').
-      // set state fields
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('lookup-literal-mode').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(12).
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('immediate-dict').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(16).
-      // change state
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      ret();
+  deffn('string-length', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('peek').
+        uint32('return1');
+  });
+  deffn('string-byte-size', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('string-length').
+        uint32('literal').uint32(4).
+        uint32('int-mul').
+        uint32('return1');
+  });
+  deffn('write-string-rev', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('dup').
+        uint32('dup').
+        uint32('string-byte-size').
+        uint32('int-add').
+        uint32('literal').uint32('write-string-rev-loop').
+        uint32('jump');
+    asm.label('write-string-rev-loop').
+        uint32('dup').
+        uint32('peek').
+        uint32('write-byte').
+        uint32('literal').int32(-4).
+        uint32('int-add').
+        uint32('2dup').
+        uint32('equals').
+        uint32('literal').uint32('write-string-rev-done').
+        uint32('ifthenjump').
+        uint32('literal').uint32('write-string-rev-loop').
+        uint32('jump');
+    asm.label('write-string-rev-done').
+        uint32('drop').
+        uint32('drop').
+        uint32('return0');
+  });
+  deffn('space?', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('literal').uint32(' '.charCodeAt(0)).
+        uint32('equals').
+        uint32('return1');
+  });
+  deffn('or', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('literal').uint32('or-done-0').
+        uint32('ifthenjump').
+        uint32('arg1').
+        uint32('literal').uint32('or-done-1').
+        uint32('ifthenjump').
+        uint32('literal').uint32(0).
+        uint32('return1').
+        label('or-done-0').
+        uint32('arg0').
+        uint32('return1').
+        label('or-done-1').
+        uint32('arg1').
+        uint32('return1');
+  });
+  deffn('parent-frame', function(asm) {
+    asm.
+        uint32('current-frame').
+        uint32('peek').
+        uint32('peek'). // of the caller's caller
+        uint32('return1');
+  });
+  deffn('set-arg0', function(asm) {
+    asm.
+        uint32('parent-frame').
+        uint32('literal').uint32(FRAME_SIZE - 4).
+        uint32('int-add').
+        uint32('arg0').
+        uint32('poke').
+        uint32('return-1');
+  });
+  deffn('set-arg1', function(asm) {
+    asm.
+        uint32('parent-frame').
+        uint32('literal').uint32(FRAME_SIZE).
+        uint32('int-add').
+        uint32('arg0').
+        uint32('poke').
+        uint32('return-1');
+  });
+  // todo how to swapdrop with a frame in the way?
+  deffn('swapdrop', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('set-arg1').
+        uint32('return-1');
+  });
+  // asm.label('2swapdrop').
+  //     uint32('literal').uint32('swapdrop').
+  //     uint32('call').
+  //     uint32('literal').uint32('swapdrop').
+  //     uint32('jump');
+  deffn('whitespace?', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('space?').
+        uint32('swap').  // space? didn't eat the arg
+        uint32('literal').uint32('\r'.charCodeAt(0)).
+        uint32('equals').
+        uint32('arg0'). // equals ate it
+        uint32('literal').uint32('\n'.charCodeAt(0)).
+        uint32('equals').
+        uint32('arg0'). // equals ate it
+        uint32('literal').uint32('\t'.charCodeAt(0)).
+        uint32('equals').
+        uint32('or').
+        uint32('swap').uint32('drop').uint32('swap').uint32('drop').
+        //uint32('literal').uint32('swapdrop').
+        //uint32('call').
+        //uint32('literal').uint32('swapdrop').
+        //uint32('call').
+        uint32('or').
+        uint32('swap').uint32('drop').uint32('swap').uint32('drop').
+        //uint32('literal').uint32('swapdrop').
+        //uint32('call').
+        //uint32('literal').uint32('swapdrop').
+        //uint32('call').
+        uint32('or').
+        uint32('swap').uint32('drop').uint32('swap').uint32('drop').
+        //uint32('literal').uint32('swapdrop').
+        //uint32('call').
+        //uint32('literal').uint32('swapdrop').
+        //uint32('call').
+        uint32('return1');
+  });
+  deffn('null?', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32(0).
+        uint32('equals').
+        uint32('literal').uint32('null-yes').
+        uint32('ifthenjump').
+        uint32('arg0').
+        uint32('literal').uint32(TERMINATOR).
+        uint32('equals').
+        uint32('literal').uint32('null-yes').
+        uint32('ifthenjump').
+        uint32('literal').uint32(0).
+        uint32('return1');
+    asm.label('null-yes').
+        uint32('literal').uint32(1).
+        uint32('return1');
+  });
+  deffn('terminator?', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32(TERMINATOR).
+        uint32('equals').
+        uint32('literal').uint32('terminator-yes').
+        uint32('ifthenjump').
+        uint32('literal').uint32(0).
+        uint32('return1');
+    asm.label('terminator-yes').
+        uint32('literal').uint32(1).
+        uint32('return1');
+  });
+  deffn('in-range?', function(asm) {
+    // (Max min value)
+    asm.
+        uint32('arg0').
+        uint32('dup').
+        uint32('arg1'). // min
+        uint32('>=').
+        uint32('literal').uint32('range-maybe').
+        uint32('ifthenjump').
+        uint32('drop').
+        uint32('literal').uint32(0).
+        uint32('return1');
+    asm.label('range-maybe').
+        uint32('arg2'). // max
+        uint32('<=').
+        uint32('literal').uint32('range-yes').
+        uint32('ifthenjump').
+        uint32('literal').uint32(0).
+        uint32('return1');
+    asm.label('range-yes').
+        uint32('literal').uint32(1).
+        uint32('return1');
+  });
+  deffn('digit?', function(asm) {
+    asm.
+        uint32('literal').uint32('9'.charCodeAt(0)).
+        uint32('literal').uint32('0'.charCodeAt(0)).
+        uint32('arg0').
+        uint32('in-range?').
+        uint32('return1');
+  });
+  deffn('lower-alpha?', function(asm) {
+    asm.
+        uint32('literal').uint32('z'.charCodeAt(0)).
+        uint32('literal').uint32('a'.charCodeAt(0)).
+        uint32('arg0').
+        uint32('in-range?').
+        uint32('return1');
+  });
+  deffn('upper-alpha?', function(asm) {
+    asm.
+        uint32('literal').uint32('Z'.charCodeAt(0)).
+        uint32('literal').uint32('A'.charCodeAt(0)).
+        uint32('arg0').
+        uint32('in-range?').
+        uint32('return1');
+  });
+  deffn('alpha?', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('lower-alpha?').
+        uint32('swap').
+        uint32('upper-alpha?').
+        uint32('swap').
+        uint32('drop').
+        uint32('or').
+        uint32('return1');
+  });
+  deffn('digit-detected', function(asm) {
+    asm.
+        uint32('literal').uint32(longify('\r\nDI')).
+        uint32('write-word').
+        uint32('return0');
+  });
+  deffn('space-detected', function(asm) {
+    asm.
+        uint32('literal').uint32(longify('\r\nSP')).
+        uint32('write-word').
+        uint32('return0');
+  });
+  deffn('alpha-detected', function(asm) {
+    asm.
+        uint32('literal').uint32(longify('\r\nAL')).
+        uint32('write-word').
+        uint32('return0');
+  });
+  deffn('start-seq', function(asm) {
+    asm.uint32('literal').uint32(0).
+        uint32('dpush').
+        uint32('dhere').
+        uint32('return1');
+  });
 
-  asm.label('literal-state').
-      uint32('lookup-literal-mode').
-      uint32('dict').
-      uint32(0xFF).
-      uint32(PARAM_REG).
-      uint32('immediate-dict');
+  deffn('end-seq', function(asm) {
+    // seq
+    asm.uint32('dhere').
+        uint32('literal').uint32(TERMINATOR).
+        uint32('dpush').
+        uint32('arg0').
+        uint32('int-sub').
+        uint32('literal').uint32(4).
+        uint32('int-div').
+        uint32('arg0').
+        uint32('poke').
+        uint32('return0');
+  });
 
-  //
-  // quote-mode: One off literal
-  //
+  deffn('abort-seq', function(asm) {
+    asm.uint32('arg0').
+        uint32('dmove').
+        uint32('ddrop').
+        uint32('return0');
+  });
+
+  deffn('eat-spaces', function(asm) {
+    asm.label('eat-spaces-loop').
+        uint32('read-byte').
+        uint32('whitespace?').
+        uint32('literal').uint32('eat-spaces-reloop').
+        uint32('ifthenjump').
+        uint32('return1');
+    asm.label('eat-spaces-reloop').
+        uint32('drop').
+        uint32('literal').uint32('eat-spaces-loop').
+        uint32('jump');
+  });
+  deffn('read-token', function(asm) {
+    asm.uint32('start-seq').
+        uint32('eat-spaces').
+        uint32('dpush').
+        label('read-token-loop').
+        uint32('read-byte').
+        uint32('whitespace?').
+        uint32('literal').uint32('read-token-done').
+        uint32('ifthenjump').
+        uint32('dpush').
+        uint32('literal').uint32('read-token-loop').
+        uint32('jump').
+        label('read-token-done').
+        uint32('drop').
+        uint32('end-seq').
+        uint32('return1');
+  });
+  deffn('tokenizer-next-word', function(asm) {
+    asm.uint32('arg0').
+        uint32('dup').
+        uint32('peek').
+        uint32('swap').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('swap').
+        uint32('return2');
+  });
+  deffn('tokenizer-eat-spaces', function(asm) {
+    asm.
+        uint32('arg0').
+        label('tokenizer-eat-spaces-loop').
+        uint32('tokenizer-next-word').
+        uint32('whitespace?').
+        uint32('literal').uint32('tokenizer-eat-spaces-reloop').
+        uint32('ifthenjump').
+        uint32('drop').
+        uint32('drop').
+        uint32('return1'); // old ptr
+    asm.label('tokenizer-eat-spaces-reloop').
+        uint32('drop').
+        uint32('swap').
+        uint32('drop'). // use new ptr
+        uint32('literal').uint32('tokenizer-eat-spaces-loop').
+        uint32('jump');
+  });
+  deffn('make-tokenizer', function(asm) {
+    // string -> tokenizer ready string
+    asm.uint32('arg0').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('return1');
+  });
+  deffn('next-token', function(asm) {
+    // tokenizer -> string-past-token token
+    asm.
+        uint32('arg0').
+        uint32('tokenizer-eat-spaces').
+        uint32('swap').uint32('drop').
+        // start token
+        uint32('start-seq').
+        uint32('swap'). // token string
+    label('tokenizer-loop').
+        uint32('tokenizer-next-word'). // token string next-string byte
+        uint32('null?').
+        uint32('literal').uint32('tokenizer-eos').
+        uint32('ifthenjump').
+        uint32('whitespace?').
+        uint32('literal').uint32('tokenizer-done').
+        uint32('ifthenjump').
+        uint32('dpush'). // token string next-string
+        uint32('swap'). // token next-string string
+        uint32('drop'). // token next-string
+        uint32('literal').uint32('tokenizer-loop').
+        uint32('jump');
+    asm.label('tokenizer-eos').
+        uint32('drop'). // last byte
+        uint32('dup2'). // token string next-string token
+        uint32('dhere').
+        uint32('swap').
+        uint32('int-sub').
+        uint32('literal').uint32(4).
+        uint32('<').
+        uint32('literal').uint32('tokenizer-abort').
+        uint32('ifthenjump').
+        uint32('dup2'). // token string next-string token
+        uint32('literal').uint32('tokenizer-done-done').
+        uint32('jump');
+    asm.label('tokenizer-abort').
+        uint32('dup2'). // token string next-string token
+        uint32('abort-seq').
+        uint32('arg0').
+        uint32('literal').uint32(0).
+        uint32('return2');
+    asm.label('tokenizer-done').  // token string next-string last-byte
+        uint32('drop'). // token string next-string
+        uint32('swap').
+        uint32('drop'); // token next-string
+    asm.label('tokenizer-done-done').
+        uint32('swap'). // next-string token
+        uint32('end-seq').
+        uint32('return2'); // next-string token
+  });
+  deffn('read-line', function(asm) {
+    asm.uint32('start-seq').
+        uint32('literal').uint32('read-line-loop').
+        uint32('jump');
+    asm.label('read-line-loop').
+        uint32('read-byte').
+        uint32('dup').
+        uint32('literal').uint32("\n".charCodeAt(0)).
+        uint32('equals').
+        uint32('literal').uint32('read-line-done').
+        uint32('ifthenjump').
+        uint32('dpush').
+        uint32('literal').uint32('read-line-loop').
+        uint32('jump');
+    asm.label('read-line-done').
+        uint32('dpush').
+        uint32('end-seq').
+        uint32('return1');
+  });
+
+  deffn('head-seq', function(asm) {
+    asm.uint32('arg0').
+        uint32('peek').
+        uint32('return1');
+  });
+
+  deffn('tail-seq', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+').
+        uint32('return1');
+  });
   
-  asm.label('quote-mode-done').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
-  asm.label('quote-mode').
-      // init state state
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
-      inc(VM.CPU.REGISTERS.R1).uint32('quote-state').
-      // set state fields
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('quote-mode-done').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(8). // param sets mask
-      // change state
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      ret();
-
-  asm.label('quote-state').
-      uint32('quote-mode-done').
-      uint32('dict'). // dict
-      uint32(PARAM_REG); // mask
+  deffn('map-seq', function(asm) {
+    asm.uint32('arg1').
+        uint32('cell+').
+        label('map-seq-loop').
+        // seq
+        uint32('head-seq'). // seq head
+        uint32('terminator?').
+        uint32('literal').uint32('map-seq-done').
+        uint32('ifthenjump').
+        uint32('arg0').
+        uint32('call-op'). // seq head result
+        uint32('swap'). // seq result head
+        uint32('drop'). // seq result
+        uint32('swap'). // result seq
+        uint32('tail-seq'). // result seq tail
+        uint32('swap'). // result tail seq
+        uint32('drop'). // result tail
+        uint32('literal').uint32('map-seq-loop').
+        uint32('jump').
+        label('map-seq-done').
+        // todo pop of the results
+        uint32('return0');
+  });
   
-  //
-  // Exec direct mode
-  // Evaluates a list of addresses.
-  //
+  deffn('tokenize', function(asm) {
+    asm.uint32('literal').uint32(TERMINATOR).
+        uint32('arg0').
+        uint32('make-tokenizer').
+        uint32('swap').uint32('drop');
+    asm.label('tokenize-loop').
+        uint32('next-token').
+        uint32('dup').
+        uint32('not').
+        uint32('literal').uint32('tokenize-done').
+        uint32('ifthenjump').
+        uint32('write-line').
+        uint32('rot').
+        uint32('drop').
+        uint32('literal').uint32('tokenize-loop').
+        uint32('jump');
+    asm.label('tokenize-done').
+        uint32('drop'). // the null token
+        uint32('drop'). // the state
+        uint32('drop'). // the old state
+        // pop the tokens into a list
+        uint32('start-seq');
+    asm.label('tokenize-pop-loop').
+        uint32('swap').
+        uint32('terminator?').
+        uint32('literal').uint32('tokenize-pop-loop-done').
+        uint32('ifthenjump').
+        uint32('dpush').
+        uint32('literal').uint32('tokenize-pop-loop').
+        uint32('jump');
+    asm.label('tokenize-pop-loop-done').
+        uint32('drop'). // terminator
+        uint32('end-seq').
+        uint32('return1');
+  });
+
+  deffn('each-token', function(asm) {
+    // str fn
+    asm.uint32('literal').uint32(TERMINATOR).
+        uint32('arg1').
+        uint32('make-tokenizer').
+        uint32('swap').uint32('drop');
+    asm.label('each-token-loop'). // tokenizer
+        uint32('next-token'). // tokenizer next-tokenizer token
+        uint32('dup').
+        uint32('not').
+        uint32('literal').uint32('each-token-done').
+        uint32('ifthenjump').
+        uint32('rot'). // token next-tokenizer tokenizer
+        uint32('drop'). // token next-tokenizer
+        uint32('literal').uint32('each-token-loop').
+        uint32('jump');
+    asm.label('each-token-done').
+        uint32('drop'). // the null token
+        uint32('drop'). // the state
+        uint32('drop'). // the old state
+        // pop the tokens into a list
+        uint32('start-seq');
+    asm.label('each-token-pop-loop'). // tokens... seq
+        uint32('swap'). // tokens1... seq token0
+        uint32('terminator?').
+        uint32('literal').uint32('each-token-pop-loop-done').
+        uint32('ifthenjump').
+        uint32('arg0'). // seq token0 fn
+        uint32('call-op'). // seq token0 result
+        uint32('dpush'). // seq token0
+        uint32('drop').
+        uint32('literal').uint32('each-token-pop-loop').
+        uint32('jump');
+    asm.label('each-token-pop-loop-done').
+        uint32('drop'). // terminator
+        uint32('end-seq').
+        uint32('return1');
+  });  
+
+  deffn('immediate-lookup', function(asm) {
+    asm.uint32('arg0').
+        uint32('immediate-dict').
+        uint32('dict-lookup').
+        uint32('return1');
+  });
+
+  deffn('immediate-dict', function(asm) {
+    asm.uint32('literal').uint32('immediate-dictionary').
+        uint32('peek').
+        uint32('return1');
+  });
   
-  asm.label('direct-execute').
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('direct-done', true).
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call');
-  asm.label('direct-done').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
-  asm.label('direct-mode').
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
-      inc(VM.CPU.REGISTERS.R1).uint32('direct-state').
-      // init state fields
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('direct-execute').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
-      // change state
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      ret();
+  deffn('compile-string', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32('immediate-lookup').
+        uint32('each-token').
+        uint32('return1');
+  });
 
-  asm.label('direct-state').
-      uint32('direct-execute').
-      uint32('dict').
-      uint32(0xFFFFFFFF);
-
-  //
-  // Compile mode
-  // Replaces the tokens with their machine code calls and loads.
-  //
-
-  var op_asm = new Assembler();
-  op_asm.nop().call(0, VM.CPU.REGISTERS.CS);
-  var NOPCALL = op_asm.assemble();
-
-  asm.label('emit-call').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).bytes(NOPCALL).
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      ret();
-
-  op_asm = new Assembler();
-  op_asm.nop().load(TOS_REG, 0, VM.CPU.REGISTERS.INS);
-  var NOPLOAD = op_asm.assemble();
-
-  asm.label('emit-literal').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).bytes(NOPLOAD).
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      ret();
-
-  op_asm = new Assembler();
-  op_asm.nop().load(PARAM_REG, 0, VM.CPU.REGISTERS.INS);
-  var NOPLOAD_PARAM = op_asm.assemble();
-
-  asm.label('emit-param').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).bytes(NOPLOAD_PARAM).
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      ret();
-
-  op_asm = new Assembler();
-  op_asm.ret().nop();
-  var RETNOP = op_asm.assemble();
-
-  asm.label('emit-ret').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).bytes(RETNOP).
-      ret();
+  deffn('compile-string1', function(asm) {
+    asm.uint32('arg0').
+        uint32('tokenize').
+        uint32('literal').uint32('immediate-lookup').
+        uint32('map-seq').
+        uint32('return1');
+  });
   
-  asm.label('lookup-compile').
-      load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(12).
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('compile-done', true).
-      call(0, VM.CPU.REGISTERS.CS).uint32('execute-immediate').
-       // save here ptr
-      call(0, VM.CPU.REGISTERS.CS).uint32('swap').
-      push(TOS_REG).
-      // lookup sym
-      load(TOS_REG, 0, STATE_REG).uint32(4).
-      call(0, VM.CPU.REGISTERS.CS).uint32('lookup-sym').
-      // emit machine codes
-      push(TOS_REG).
-      mov(TOS_REG, PARAM_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('emit-param').
-      pop(TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('emit-call').
-      // pop here ptr
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      pop(TOS_REG).
-      ret();
-  asm.label('compile-done').
-      // save pointer
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      push(TOS_REG).
-      // terminate string
-      call(0, VM.CPU.REGISTERS.CS).uint32('emit-ret').
-      // restore pointer
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      pop(TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
-  asm.label('compile-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('here').
-      mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.CS).
-      inc(VM.CPU.REGISTERS.R1).uint32('compile-state').
-      // set state fields
-      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('lookup-compile').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(0).
-      mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.DS).
-      inc(VM.CPU.REGISTERS.R0).uint32('dict').
-      store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R1).uint32(4).
-      store(PARAM_REG, 0, VM.CPU.REGISTERS.R1).uint32(12).
-      // change state
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('enter-state').
-      call(0, VM.CPU.REGISTERS.CS).uint32('rswap').
-      ret();
+  deffn('write-line', function(asm) {
+    asm.uint32('arg0').
+        uint32('write-string').
+        uint32('literal').uint32(CRNL).
+        uint32('write-word').
+        uint32('return0');
+  });
 
-  asm.label('compile-state').
-      uint32('lookup-compile').
-      uint32('dict').
-      uint32(0xFF).
-      uint32(PARAM_REG);
+  deffn('write-line-ret', function(asm) {
+    asm.uint32('arg0').
+        uint32('write-string').
+        uint32('literal').uint32(CRNL).
+        uint32('write-word').
+        uint32('literal').uint32(0).
+        uint32('return1');
+  });
 
-  var math_ops = {
-    addi: 'int-add',
-    subi: 'int-sub',
-    muli: 'int-mul',
-    divi: 'int-div'
-  };
+  deffn('write-seq', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32('write-line-ret').
+        uint32('map-seq').
+        uint32('return0');
+  });
   
-  for(var k in math_ops) {
-    asm.label(math_ops[k]).
-        mov(VM.CPU.REGISTERS.R0, TOS_REG).
-        call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-        cls(VM.CPU.STATUS.NUMERICS);
-
-    asm[k](TOS_REG, VM.CPU.REGISTERS.STATUS);
-
-    asm.mov(TOS_REG, VM.CPU.REGISTERS.R0).
-        ret();
-  }
-
-  asm.label('int-lt').
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      cmpi(TOS_REG, VM.CPU.REGISTERS.R0).
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(TOS_REG, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
-      ret();
-  asm.label('int-gt').
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      cmpi(VM.CPU.REGISTERS.R0, TOS_REG).
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      load(TOS_REG, VM.CPU.STATUS.NEGATIVE, VM.CPU.REGISTERS.INS).uint32(1).
-      ret();
-
-  asm.label('set-word-size').
-      store(TOS_REG, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop').
-      ret();
-  asm.label('with-word-size').
-      pop(VM.CPU.REGISTERS.R0). // return addr
-      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
-      push(VM.CPU.REGISTERS.R1).
-      push(VM.CPU.REGISTERS.R0).
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-word-size').
-      ret();
-
-  asm.label('end-word-size').
-      pop(VM.CPU.REGISTERS.R0).
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      pop(TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('set-word-size').
-      push(VM.CPU.REGISTERS.R0).
-      ret();
-
-  asm.label('exec_words').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exec-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_words').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
+  deffn('write-tokens', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32('write-line-ret').
+        uint32('each-token').
+        uint32('return0');
+  });
   
-  asm.label('exec_direct').
-      call(0, VM.CPU.REGISTERS.CS).uint32('direct-mode').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_words').
-      call(0, VM.CPU.REGISTERS.CS).uint32('exit-state').
-      ret();
-  
-  asm.label('eval_param').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, PARAM_REG);
-  asm.label('eval_words').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(4).
-      call(0, VM.CPU.REGISTERS.CS).uint32('with-word-size').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval').
-      call(0, VM.CPU.REGISTERS.CS).uint32('end-word-size').
-      ret();
-
-  asm.label('eval_byte_param').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, PARAM_REG);
-  asm.label('eval_bytes').
-      // TOS: ptr
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('with-word-size').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval').
-      call(0, VM.CPU.REGISTERS.CS).uint32('end-word-size').
-      ret();
-
-  asm.label('eval-inc-ip-by').
-      // TOS amount
-      mov(VM.CPU.REGISTERS.R0, TOS_REG).
-      cls(VM.CPU.STATUS.NUMERICS).
-      addi(EVAL_IP_REG, VM.CPU.REGISTERS.STATUS).
-      mov(EVAL_IP_REG, VM.CPU.REGISTERS.R0).
-      ret();
-
-  asm.label('eval-inc-ip').
-      push(TOS_REG).
-      load(TOS_REG, 0, VM.CPU.REGISTERS.DS).uint32('eval-word-size').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-inc-ip-by').
-      pop(TOS_REG).
-      ret();
-
-  asm.label('eval').
-      // TOS: ptr to string to eval
-      push(EVAL_IP_REG);
-  asm.label('eval-jump').
-      //mov(FP_REG, VM.CPU.REGISTERS.SP).
-      mov(EVAL_IP_REG, TOS_REG).
-      call(0, VM.CPU.REGISTERS.CS).uint32('drop');
-  
-  asm.label('eval-next').
-      // EVAL_IP_REG has next address
-      // lookup: load byte
-      load(VM.CPU.REGISTERS.R0, 0, EVAL_IP_REG).uint32(0).
-      // jump to done when the byte == TERMINATOR
-      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
-      cmpi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('eval-done', true).
-      // AND out the byte
-      load(VM.CPU.REGISTERS.R1, 0, STATE_REG).uint32(8).
-      and(VM.CPU.REGISTERS.R1).
-      // jump to done when the byte == 0
-      load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      cmpi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.R0).
-      inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('eval-done', true).
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.R0).
-      // advance eval's IP
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval-inc-ip').
-      // make call
-      load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(0).
-      callr(VM.CPU.REGISTERS.CS, VM.CPU.REGISTERS.R0).
-      // prep next loop
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('eval-next');
-  asm.label('eval-done').
-      //halt().
-      //load(VM.CPU.REGISTERS.IP, 0, FP_REG).uint32(4);
-      pop(EVAL_IP_REG).
-      ret();
-
-  asm.label('quit').
-      halt().
-      pop(VM.CPU.REGISTERS.R0).
-      pop(EVAL_IP_REG).
-      push(VM.CPU.REGISTERS.R0).
-      ret();
-  
-  asm.label('dumb_forth_loop_start').
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_helo').
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_ok');
-  asm.label('dumb_forth_loop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('read').
-      load(VM.CPU.REGISTERS.R0, 0, STATE_REG).uint32(0).
-      // execute the token
-      callr(VM.CPU.REGISTERS.CS, VM.CPU.REGISTERS.R0).
-      // loop back
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('dumb_forth_loop').
-      ret();
-
-  asm.label('write_helo').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(HELO).
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_word').
-      ret();
+  deffn('write-tokens1', function(asm) {
+    asm.uint32('arg0').
+        uint32('tokenize').
+        uint32('literal').uint32('write-line-ret').
+        uint32('map-seq').
+        uint32('return0');
+  });
 
   /*
-  asm.label('write_ok').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      mov(TOS_REG, VM.CPU.REGISTERS.CS).
-      inc(TOS_REG).uint32('write_ok_script').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
-      ret();
-  asm.label('write_ok_script').
-      bytes("\"KO\n\r\"^^....\" >\n\r\"^^....\x00");
-*/
+  defop('indirect-param', function(asm) {
+    asm.mov(VM.CPU.REGISTERS.R0, EVAL_IP_REG).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R0).uint32(4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  deffn('indirect-param', function(asm) {
+    asm.uint32('eip').
+        uint32('peek').
+        uint32('dict-entry-data').
+        uint32('cell+').
+        uint32('return1');
+  });
+  */
 
-  asm.label('write_ok').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(OK1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_word').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(OK2).
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_word').
-      ret();
+  deffn('emit-call-param', function(asm) {
+    // emit:
+    // load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(name + '-ops').
+    // push(VM.CPU.REGISTERS.R0).
+    // load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call').
+    asm.uint32('literal').nop().load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).
+        uint32('dpush').
+        uint32('dhere').
+        uint32('cell+2').
+        uint32('cell+2').
+        uint32('dpush').
+        uint32('literal').push(VM.CPU.REGISTERS.R0).load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).
+        uint32('dpush').
+        uint32('literal').uint32('call').
+        uint32('dpush').
+        uint32('return0');
+  });
+  
+  deffn('constant-capturer', function(asm) {
+    asm.uint32('start-seq').
+        uint32('emit-call-param').
+        uint32('literal').uint32('literal').
+        uint32('dpush').
+        uint32('arg0').
+        uint32('dpush').
+        uint32('literal').uint32('return1').
+        uint32('dpush').
+        uint32('end-seq').
+        uint32('cell+').
+        uint32('return1');
+  });
+  
+  deffn('constant', function(asm) {
+    // value name
+    asm.uint32('arg0').
+        uint32('arg1').
+        uint32('constant-capturer').
+        uint32('swap').uint32('drop').
+        uint32('arg1').
+        uint32('add-dict').
+        uint32('return0');
+  });
 
-  asm.label('write_err').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(ERR1).
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_word').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(ERR2).
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_word').
-      ret();
+  deffn('variable-peeker', function(asm) {
+    asm.uint32('start-seq').
+        uint32('emit-call-param').
+        uint32('literal').uint32('literal').
+        uint32('dpush').
+        uint32('arg0').
+        uint32('dpush').
+        uint32('literal').uint32('dict').
+        uint32('dpush').
+        uint32('literal').uint32('dict-lookup').
+        uint32('dpush').
+        uint32('literal').uint32('dict-entry-data').
+        uint32('dpush').
+        uint32('literal').uint32('return1').
+        uint32('dpush').
+        uint32('end-seq').
+        uint32('cell+').
+        uint32('return1');
+  });
+  
+  deffn('defvar', function(asm) {
+    // value name
+    asm.uint32('arg0').
+        uint32('variable-peeker').
+        uint32('arg0').
+        uint32('swap').
+        uint32('arg1').
+        uint32('add-dict').
+        uint32('return1');
+  });
 
-  asm.label('forth_loop_start').
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_helo');
-  asm.label('forth_loop').
-      call(0, VM.CPU.REGISTERS.CS).uint32('dup').
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_ok').
-      call(0, VM.CPU.REGISTERS.CS).uint32('input_flush').
-      call(0, VM.CPU.REGISTERS.CS).uint32('wait_for_input').
-      load(TOS_REG, 0, VM.CPU.REGISTERS.STATUS).uint32(input_dev_addr + input_dev_length).
-      load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
-      cmpi(TOS_REG, PARAM_REG).
-      load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('forth_loop_halt').
-      //call(0, VM.CPU.REGISTERS.CS).uint32('dup'). // the length
-      load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(input_dev_addr + input_dev_buffer).
-      //call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
-      call(0, VM.CPU.REGISTERS.CS).uint32('eval_bytes').
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('forth_loop').
-      ret();
+  deffn('set-var', function(asm) {
+    // value name
+    // return the entry
+    // lookup if not found then define
+    asm.uint32('arg0').
+        uint32('dict').
+        uint32('dict-lookup').
+        uint32('null?').
+        uint32('literal').uint32('set-not-found').
+        uint32('ifthenjump').
+        // found
+        uint32('arg1').
+        uint32('swap').
+        uint32('set-dict-entry-data').
+        uint32('return1');
+    // else set data
+    asm.label('set-not-found').
+        uint32('arg1').
+        uint32('arg0').
+        uint32('defvar').
+        uint32('return1');
+  });
 
-  asm.label('forth_loop_halt').
-      call(0, VM.CPU.REGISTERS.CS).uint32('write_err').
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('forth_loop');
+  asm.label('the-mark-sym').bytes(cellpad('*mark*'));
+  
+  deffn('mark', function(asm) {
+    asm.uint32('dict').
+        uint32('literal').uint32('the-mark-sym').
+        uint32('constant').
+        uint32('return0');
+  });
+
+  deffn('forget', function(asm) {
+    asm.uint32('literal').uint32('the-mark-sym').
+        uint32('dict').
+        uint32('dict-lookup').
+        uint32('dict-entry-data').
+        uint32('set-dict').
+        uint32('return0');
+  });
+
+  deffn('dict-forget', function(asm) {
+    // name dict
+    // find parent
+    // link parent to child
+  });
+
+  deffn('peeker', function(asm) {
+    // addr
+    asm.uint32('start-seq').
+        uint32('emit-call-param').
+        uint32('literal').uint32('literal').
+        uint32('dpush').
+        uint32('arg0').
+        uint32('dpush').
+        uint32('literal').uint32('peek').
+        uint32('dpush').
+        uint32('literal').uint32('return1').
+        uint32('dpush').
+        uint32('end-seq').
+        uint32('cell+').
+        uint32('return1');
+  });
+
+  deffn('args1', function(asm) {
+    asm.uint32('args').
+        uint32('cell+').
+        uint32('return1');
+  });
+  
+  deffn('local-ref', function(asm) {
+    // the-location name => entry
+    asm.uint32('args').
+        uint32('cell+').
+        uint32('peeker').
+        uint32('arg0').
+        uint32('swap').
+        uint32('args').
+        uint32('cell+').
+        uint32('swap').uint32('drop').
+        uint32('add-dict').
+        uint32('return0');
+  });
+
+  deffn('store-local-ref', function(asm) {
+    // value entry
+    asm.uint32('arg0').
+        uint32('dict-entry-data').
+        uint32('arg1').
+        uint32('swap').
+        uint32('poke').
+        uint32('return0');
+  });
+  
+  asm.label('the-tokenizer-sym').bytes(cellpad('*tokenizer*'));
+
+  deffn('*tokenizer*', function(asm) {
+    asm.uint32('literal').uint32('the-tokenizer-sym').
+        uint32('dict').
+        uint32('dict-lookup').
+        uint32('return1');
+  });
+  
+  deffn('e-lit', function(asm) {
+    asm. // get tokenizer
+        uint32('*tokenizer*').
+        uint32('dup').
+        uint32('call-indirect'). // tokenizer
+        // read a token
+        uint32('next-token'). // tokenizer new-tokenizer token
+        uint32('rot'). // token new-tokenizer tokenizer
+        uint32('drop'). // token new-tokenizer
+        // update *tokenizer*
+        uint32('local0').
+        uint32('store-local-ref').
+        // make a return
+        uint32('drop'). // token tokenizer local
+        uint32('drop'). // token
+        uint32('return1');
+  });
+  
+  deffn('eval-string', function(asm) {
+    // str
+    asm.uint32('arg0').
+        uint32('make-tokenizer').
+        uint32('swap').uint32('drop'). // tokenizer
+        uint32('literal').uint32('the-tokenizer-sym').
+        uint32('local-ref').
+        uint32('drop');
+    asm.label('eval-string-inner').
+        uint32('local0').
+        uint32('next-token'). // tokenizer new-tokenizer token
+        uint32('rot'). // token new-tokenizer tokenizer
+        uint32('drop'). // token new-tokenizer
+        uint32('store-local0'). // token
+        uint32('null?').
+        uint32('literal').uint32('eval-string-done').
+        uint32('ifthenjump').
+        uint32('dict').
+        uint32('dict-lookup'). // token dict lookup; fixme: tail call needs to eat caller's frame?
+        uint32('swap').
+        uint32('drop'). // token lookup
+        uint32('dup'). // token lookup lookup
+        uint32('not').
+        uint32('literal').uint32('eval-string-not-found').
+        uint32('ifthenjump').
+        uint32('swap'). // lookup token
+        uint32('drop'). // lookup
+        uint32('call-indirect'). // expecting no return
+        uint32('literal').uint32('eval-string-inner').
+        uint32('jump');
+    asm.label('eval-string-not-found'). // token lookup
+        uint32('drop'). // token
+        uint32('literal').uint32('eval-string-inner').
+        uint32('jump');
+    asm.label('eval-string-done'). // token
+        uint32('return0');
+  });
+
+  defop('input-flush', function(asm) {
+    asm.call(0, VM.CPU.REGISTERS.CS).uint32('input_flush').
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  defop('input-reset', function(asm) {
+    asm.call(0, VM.CPU.REGISTERS.CS).uint32('reset_input').
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
+  });
+  
+  deffn('flush-read-line', function(asm) {
+    asm.uint32('input-reset').
+        uint32('read-line').
+        uint32('input-reset').
+        uint32('return1');
+  });
+
+  deffn('zero', function(asm) {
+    asm.uint32('literal').uint32(0).
+        uint32('return1');
+  });
+  deffn('false', function(asm) {
+    asm.uint32('literal').uint32(0).
+        uint32('return1');
+  });
+  deffn('terminator', function(asm) {
+    asm.uint32('literal').uint32(TERMINATOR).
+        uint32('return1');
+  });
+  deffn('one', function(asm) {
+    asm.uint32('literal').uint32(1).
+        uint32('return1');
+  });
+  deffn('true', function(asm) {
+    asm.uint32('literal').uint32(1).
+        uint32('return1');
+  });
+
+  deffn('cell-size', function(asm) {
+    asm.uint32('literal').uint32(4).
+        uint32('return1');
+  });
+
+  deffn('cell+', function(asm) {
+    asm.uint32('cell-size').
+        uint32('arg0').
+        uint32('int-add').
+        uint32('return1');
+  });
+
+  deffn('cell+n', function(asm) {
+    asm.uint32('cell-size').
+        uint32('arg0').
+        uint32('int-mul').
+        uint32('arg1').
+        uint32('int-add').
+        uint32('return1');
+  });
+
+  deffn('cell+2', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32(2).
+        uint32('cell+n').
+        uint32('return1');
+  });
+
+  deffn('cell+3', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32(3).
+        uint32('cell+n').
+        uint32('return1');
+  });
+  
+  deffn('cell-', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell-size').
+        uint32('int-sub').
+        uint32('return1');
+  });
+
+  asm.label('program-size');
+
+  asm.label('symbols-begin');
+
+  for(var n in ops) {
+    var label = ops[n];
+    asm.label(label + '-sym').bytes(cellpad(label));
+  }
+
+  for(var n in fns) {
+    var label = fns[n];
+    asm.label(label + '-sym').bytes(cellpad(label));
+  }
+
+  asm.label('symbols-end');
+  asm.label('symbols-size').uint32(asm.resolve('symbols-end') - asm.resolve('symbols-begin'));
+  
+  asm.label('dictionary-begin');
+
+  function dict_entry(label, code, data, last_label) {
+    var label_def = label + '-def';
+    
+    asm.label(label_def).
+        uint32(label + '-sym').
+        uint32(code).
+        uint32(data).
+        uint32(last_label);
+    
+    return label_def;
+  }
+
+  function dict_entry_op(label, last_label) {
+    return dict_entry(label, label, 0, last_label);
+  }
+
+  function dict_entry_fn(label, last_label) {
+    return dict_entry(label, label, 0, last_label);
+  }
+
+  var last_label = TERMINATOR;
+
+  for(var n in ops) {
+    var label = ops[n];
+    last_label = dict_entry_op(label, last_label);
+  }
+
+  for(var n in fns) {
+    var label = fns[n];
+    last_label = dict_entry_fn(label, last_label);
+  }
+
+  asm.label('dictionary-end');
+  asm.label('dictionary').
+      uint32(last_label);
+  asm.label('dictionary-size').uint32(asm.resolve('dictionary-end') - asm.resolve('dictionary-begin'));
+
+  asm.label('toklit-sym').bytes(cellpad('lit'));
+  asm.label('toklit').
+      halt().
+      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next');
       
-  asm.label('program-size').
-      uint32('program-size');
+  asm.label('tok-write-sym').bytes(cellpad('.'));
+      
+  last_label = TERMINATOR;
+  last_label = dict_entry('toklit', 'toklit', 0, last_label);
+  last_label = dict_entry('tok-write', 'write-line', 0, last_label);
+  
+  asm.label('immediate-dictionary').uint32(last_label);
+  
+  /*
+  asm.label('image-size').
+      uint32('program-size').
+      uint32('dictionary-size').
+      uint32('symbols-size').
+      uint32('image-size');
+*/
   
   return asm;
 }
 
-Forth.bootstrap =
-    "\"' 'K'O...\"'O:"
-    + "\"' '>' ...\"'P:"
-    + "\"_E\"'F:"
-    + "\"|~'\r='F'^?\"'E:"
-    + "\"IOPEL\"'L:"
-    + "{IOPEL}'LS"
-;
-
 Forth.assemble = function(ds, cs, info) {
   return Forth.assembler(ds, cs, info).assemble();
 }
-  
+
+Forth.longify = longify;
+Forth.cellpad = cellpad;
+
 if(typeof(module) != 'undefined') {
   module.exports = Forth;
 }
