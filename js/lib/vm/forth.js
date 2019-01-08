@@ -348,16 +348,23 @@ Forth.assembler = function(ds, cs, info) {
       load(TOS_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
       load(PARAM_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
       load(DICT_REG, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
+      // zero frame's link
+      load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      pop(VM.CPU.REGISTERS.R1).
+      push(VM.CPU.REGISTERS.R0).
       mov(FP_REG, VM.CPU.REGISTERS.SP).
+      push(VM.CPU.REGISTERS.R1).
       ret();
 
   asm.label('outer-execute').
       // swap return addr and EIP
-      pop(VM.CPU.REGISTERS.R0).
-      pop(VM.CPU.REGISTERS.R1).
+      // and make a frame before pushing them back
+      pop(VM.CPU.REGISTERS.R0). // return addr
+      pop(VM.CPU.REGISTERS.R1). // eip to exec
       push(VM.CPU.REGISTERS.R0).
       push(VM.CPU.REGISTERS.R1).
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-code').
+      load(FP_REG, 0, VM.CPU.REGISTERS.INS).uint32(0).
+      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code').
       // mov(EVAL_IP_REG, VM.CPU.REGISTERS.R1).
       // load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin-code').
       ret();
@@ -373,16 +380,9 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
-  defop('call', function(asm) {
+  defop('exec', function(asm) {
     asm.pop(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.R0).uint32(4).
-        ret();
-  });
-  
-  defop('call-ops', function(asm) {
-    asm.push(EVAL_IP_REG).
-        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.SP).uint32(4).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin-code').
         ret();
   });
   
@@ -402,33 +402,55 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin-code').
         ret();
   });
-  
+
+  // Start a new call frame.
+  // Call frames are structured like, low memory to high:
+  //    locals
+  //    link to previous frame <- FP_REG -
+  //    return address
+  //    call arguments...
+  //    caller's locals
+  //    previous frame
   defop('begin', function(asm) {
     asm.push(FP_REG).
         mov(FP_REG, VM.CPU.REGISTERS.SP).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
         ret();
   });
-  
-  asm.label('quit').
-      // actually return from call
-      // fixme need the top most stack frame
-      load(VM.CPU.REGISTERS.IP, 0, FP_REG).uint32(12).
-      ret();
 
+  // actually return from call
+  defop('quit', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        // get the top most stack frame
+        label('quit-loop').
+        load(VM.CPU.REGISTERS.R1, 0, FP_REG).uint32(0).
+        cmpi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.R0).
+        inc(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO).uint32('quit-done', true).
+        mov(FP_REG, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('quit-loop').
+        label('quit-done').
+        // move SP
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        inc(VM.CPU.REGISTERS.SP).uint32(12).
+        ret();
+  });
+
+  // Return to the calling function.
   defop('exit', function(asm) {
     asm.
         load(EVAL_IP_REG, 0, FP_REG).int32(4).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('end-code');
   });
-  
+
+  // Ends the current frame.
   defop('end', function(asm) {
-    asm.mov(VM.CPU.REGISTERS.SP, FP_REG).
-        pop(FP_REG).
+    asm.load(FP_REG, 0, FP_REG).uint32(0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
         ret();
   });
 
+  // Load the next word, increment eval IP, and execute the word's code cell.
   defop('next', function(asm) {
     asm.
         load(VM.CPU.REGISTERS.R0, 0, EVAL_IP_REG).int32(0).
@@ -538,7 +560,31 @@ Forth.assembler = function(ds, cs, info) {
         pop(EVAL_IP_REG).
         // overwrite call's argument
         store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-code');
+        //push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
+  });
+  
+  defop('cont', function(asm) {
+    asm.
+        // pop frame
+        load(FP_REG, 0, FP_REG).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
+  });
+  
+  defop('tailcall1', function(asm) {
+    asm.
+        // save where to call
+        pop(VM.CPU.REGISTERS.R0).
+        // save the arg
+        pop(VM.CPU.REGISTERS.R1).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // overwrite call's argument
+        store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
   });
   
   defop('call-op', function(asm) {
@@ -549,13 +595,13 @@ Forth.assembler = function(ds, cs, info) {
   defop('call-param', function(asm) {
     asm.
         push(EVAL_IP_REG).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-code');
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
   });
   
   defop('call-op-param', function(asm) {
     asm.
         push(VM.CPU.REGISTERS.IP).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-code');
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
   });
   
   defop('tailcall-param', function(asm) {
@@ -657,6 +703,11 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
+  defop('drop3', function(asm) {
+    asm.inc(VM.CPU.REGISTERS.SP).uint32(4 * 3).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
   defop('dup', function(asm) {
     asm.
         load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
@@ -739,6 +790,15 @@ Forth.assembler = function(ds, cs, info) {
     });
   }
 
+  defop('bsl', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R1).
+        pop(VM.CPU.REGISTERS.R0).
+        cls(VM.CPU.STATUS.NUMERICS).
+        bsl(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
   defop('logand', function(asm) {
     asm.
         pop(VM.CPU.REGISTERS.R1).
@@ -815,16 +875,6 @@ Forth.assembler = function(ds, cs, info) {
         ret();
   });
   
-  defop('ifthenop', function(asm) { // condition addr
-    asm.pop(VM.CPU.REGISTERS.R2).
-        pop(VM.CPU.REGISTERS.R0).
-        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
-        cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
-        load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('next-code').
-        mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R2).
-        ret();
-  });
-  
   defop('ifthencall', function(asm) {
     asm.
         // condition addr
@@ -834,7 +884,7 @@ Forth.assembler = function(ds, cs, info) {
         cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
         load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('next-code').
         push(VM.CPU.REGISTERS.R2).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-code').
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code').
         ret();
   });
   
@@ -973,6 +1023,12 @@ Forth.assembler = function(ds, cs, info) {
         push(FP_REG).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
+  deffn('parent-frame', function(asm) {
+    asm.
+        uint32('arg0').
+        uint32('peek').
+        uint32('return1');
+  });
   
   defop('dict', function(asm) {
     asm.
@@ -1019,10 +1075,11 @@ Forth.assembler = function(ds, cs, info) {
   deffn('bootstrap', function(asm) {
     asm.
         uint32('dict-init').
-        uint32('literal').uint32('bootstrap-script').
-        uint32('compile-string').
-        uint32('swap').uint32('drop').
-        uint32('call-seq').
+        //uint32('literal').uint32('bootstrap-script').
+        //uint32('compile-string').
+        //uint32('swap').uint32('drop').
+        //uint32('call-seq').
+        uint32('bootstrap-loop').
         uint32('return0');
   });
 
@@ -1066,6 +1123,92 @@ uint32('docode').
       uint32(';');
   */
 
+  deffn('color-reset', function(asm) {
+    asm.uint32('literal').uint32(longify('\x1B[00')).
+        uint32('write-word').
+        uint32('literal').uint32(longify('m\x00\x00\x00')).
+        uint32('write-word').
+        uint32('return0');
+  });
+  
+  deffn('color-attr', function(asm) {
+    asm.uint32('literal').uint32(longify('\x1B[00')).
+        uint32('arg0').
+        uint32('literal').uint32(24).
+        uint32('bsl').
+        uint32('int-add').
+        uint32('write-word').
+        uint32('literal').uint32(longify('m\x00\x00\x00')).
+        uint32('write-word').
+        uint32('return0');
+  });
+  
+  deffn('color', function(asm) {
+    asm.uint32('literal').uint32(longify('\x1B[30')).
+        uint32('arg0').
+        uint32('literal').uint32(24).
+        uint32('bsl').
+        uint32('int-add').
+        uint32('write-word').
+        uint32('literal').uint32(longify(';40m')).
+        uint32('arg1').
+        uint32('literal').uint32(16).
+        uint32('bsl').
+        uint32('int-add').
+        uint32('write-word').
+        uint32('return0');
+  });
+
+  deffn('fgcolor', function(asm) {
+    asm.uint32('literal').uint32(longify('\x1B[00')).
+        uint32('arg1').
+        uint32('literal').uint32(24).
+        uint32('bsl').
+        uint32('int-add').
+        uint32('write-word').
+        uint32('literal').uint32(longify(';30m')).
+        uint32('arg0').
+        uint32('literal').uint32(16).
+        uint32('bsl').
+        uint32('int-add').
+        uint32('write-word').
+        uint32('return0');
+  });
+
+  deffn('bright', function(asm) {
+    asm.uint32('literal').uint32(1).
+        uint32('color-attr').
+        uint32('return0');
+  });
+  
+  deffn('red', function(asm) {
+    asm.uint32('literal').uint32(8).
+        uint32('literal').uint32(1).
+        uint32('color').
+        uint32('return0');
+  });
+  
+  deffn('green', function(asm) {
+    asm.uint32('literal').uint32(8).
+        uint32('literal').uint32(2).
+        uint32('color').
+        uint32('return0');
+  });
+
+  deffn('yellow', function(asm) {
+    asm.uint32('literal').uint32(8).
+        uint32('literal').uint32(3).
+        uint32('color').
+        uint32('return0');
+  });
+
+  deffn('blue', function(asm) {
+    asm.uint32('literal').uint32(8).
+        uint32('literal').uint32(4).
+        uint32('color').
+        uint32('return0');
+  });
+
   deffn('crnl', function(asm) {
     asm.uint32('literal').uint32(CRNL).
         uint32('return1');
@@ -1082,27 +1225,39 @@ uint32('docode').
         uint32('return0');
   });
   deffn('write-ok', function(asm) {
-    asm.
+    asm.uint32('bright').
+        uint32('green').
         uint32('literal').uint32(OK1).
         uint32('write-word').
+        uint32('color-reset').
         uint32('return0');
   });
   deffn('write-err', function(asm) {
-    asm.
+    asm.uint32('bright').
+        uint32('red').
         uint32('literal').uint32(ERR1).
         uint32('write-word').
+        uint32('color-reset').
         uint32('return0');
   });
 
   deffn('lit', function(asm) {
     asm.uint32('read-token').uint32('return1');
   });
+
+  deffn('prompt', function(asm) {
+    asm.uint32('bright').
+        uint32('yellow').
+        uint32('literal').uint32(OK2).
+        uint32('write-word').
+        uint32('color-reset').
+        uint32('return0');
+  });
   
   deffn('bootstrap-loop', function(asm) {
     asm.label('bootstrap-loop-inner').
         uint32('write-ok').
-        uint32('literal').uint32(OK2).
-        uint32('write-word').
+        uint32('prompt').
         uint32('read-token').
         //uint32('write-string').
         //uint32('write-string-rev').
@@ -1114,7 +1269,7 @@ uint32('docode').
         uint32('literal').uint32('bootstrap-loop-not-found').
         uint32('ifthenjump').
         uint32('swap').uint32('drop').
-        uint32('call').
+        uint32('exec').
         uint32('literal').uint32('bootstrap-loop-inner').
         uint32('jump').
         uint32('exit');
@@ -1158,8 +1313,9 @@ uint32('docode').
         uint32('arg0').
         uint32('dict').
         uint32('make-dict').
+        uint32('dup').
         uint32('set-dict').
-        uint32('return0');
+        uint32('return1');
   });
   deffn('dict-entry-name', function(asm) {
     asm.uint32('arg0').
@@ -1229,6 +1385,21 @@ uint32('docode').
         uint32('return1');
   });
 
+  deffn('create', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32(0).
+        uint32('literal').uint32(0).
+        uint32('add-dict').
+        uint32('return1');
+  });
+  deffn('docol>', function(asm) {
+    asm.uint32('literal').uint32('call-data-code').
+        uint32('arg0').
+        uint32('set-dict-entry-code').
+        // todo enter compile mode
+        uint32('return0');
+  });
+
   deffn('\'', function(asm) {
     asm.uint32('lit').
         uint32('dict').
@@ -1245,7 +1416,7 @@ uint32('docode').
         uint32('literal').uint32('dict-each-done').
         uint32('ifthenjump').
         uint32('arg1').
-        uint32('call').
+        uint32('exec').
         uint32('local0').
         uint32('dict-entry-next').
         uint32('store-local0').
@@ -1307,7 +1478,7 @@ uint32('docode').
   });
   
   defop('rot', function(asm) {
-    // a b c -> b a c
+    // a b c -> c b a
     asm.load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
         load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(8).
         store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(8).
@@ -1467,15 +1638,9 @@ uint32('docode').
         uint32('arg1').
         uint32('return1');
   });
-  deffn('parent-frame', function(asm) {
-    asm.
-        uint32('current-frame').
-        uint32('peek').
-        uint32('peek'). // of the caller's caller
-        uint32('return1');
-  });
   deffn('set-arg0', function(asm) {
-    asm.
+    asm.uint32('current-frame').
+        uint32('parent-frame').
         uint32('parent-frame').
         uint32('literal').uint32(FRAME_SIZE - 4).
         uint32('int-add').
@@ -1484,7 +1649,8 @@ uint32('docode').
         uint32('return-1');
   });
   deffn('set-arg1', function(asm) {
-    asm.
+    asm.uint32('current-frame').
+        uint32('parent-frame').
         uint32('parent-frame').
         uint32('literal').uint32(FRAME_SIZE).
         uint32('int-add').
@@ -1501,7 +1667,7 @@ uint32('docode').
   });
   // asm.label('2swapdrop').
   //     uint32('literal').uint32('swapdrop').
-  //     uint32('call').
+  //     uint32('exec').
   //     uint32('literal').uint32('swapdrop').
   //     uint32('jump');
   deffn('whitespace?', function(asm) {
@@ -1520,21 +1686,21 @@ uint32('docode').
         uint32('or').
         uint32('swap').uint32('drop').uint32('swap').uint32('drop').
         //uint32('literal').uint32('swapdrop').
-        //uint32('call').
+        //uint32('exec').
         //uint32('literal').uint32('swapdrop').
-        //uint32('call').
+        //uint32('exec').
         uint32('or').
         uint32('swap').uint32('drop').uint32('swap').uint32('drop').
         //uint32('literal').uint32('swapdrop').
-        //uint32('call').
+        //uint32('exec').
         //uint32('literal').uint32('swapdrop').
-        //uint32('call').
+        //uint32('exec').
         uint32('or').
         uint32('swap').uint32('drop').uint32('swap').uint32('drop').
         //uint32('literal').uint32('swapdrop').
-        //uint32('call').
+        //uint32('exec').
         //uint32('literal').uint32('swapdrop').
-        //uint32('call').
+        //uint32('exec').
         uint32('return1');
   });
   deffn('null?', function(asm) {
@@ -1827,7 +1993,7 @@ uint32('docode').
         uint32('ifthenjump').
         uint32('arg0').
         //uint32('call-op'). // seq head result
-        uint32('call'). // seq head result
+        uint32('exec'). // seq head result
         uint32('swap'). // seq result head
         uint32('drop'). // seq result
         uint32('swap'). // result seq
@@ -1906,7 +2072,7 @@ uint32('docode').
         uint32('ifthenjump').
         uint32('arg0'). // seq token0 fn
         //uint32('call-op'). // seq token0 result
-        uint32('call'). // seq token0 result
+        uint32('exec'). // seq token0 result
         uint32('dpush'). // seq token0
         uint32('drop').
         uint32('literal').uint32('each-token-pop-loop').
@@ -1929,7 +2095,32 @@ uint32('docode').
         uint32('peek').
         uint32('return1');
   });
+
+  deffn('immediate-dict-add', function(asm) {
+    asm.uint32('arg2').
+        uint32('arg1').
+        uint32('arg0').
+        uint32('immediate-dict').
+        uint32('make-dict').
+        uint32('literal').uint32('immediate-dict-sym').
+        uint32('set-var').
+        uint32('drop').
+        uint32('return1');
+  });
   
+  deffn('immediate', function(asm) {
+    asm.uint32('arg0').
+        uint32('dict-entry-name').
+        uint32('swap').
+        uint32('dict-entry-code').
+        uint32('swap').
+        uint32('dict-entry-data').
+        uint32('swap').
+        uint32('drop').
+        uint32('immediate-dict-add').
+        uint32('return0');
+  });
+
   deffn('write-line', function(asm) {
     asm.uint32('arg0').
         uint32('write-string').
@@ -1988,7 +2179,7 @@ uint32('docode').
     // emit:
     // load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(name + '-ops').
     // push(VM.CPU.REGISTERS.R0).
-    // load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call').
+    // load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec').
     asm.uint32('literal').nop().mov(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.IP).
         uint32('dpush').
         uint32('literal').nop().inc(VM.CPU.REGISTERS.R0).
@@ -1997,7 +2188,7 @@ uint32('docode').
         uint32('dpush').
         uint32('literal').push(VM.CPU.REGISTERS.R0).mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R0).
         uint32('dpush').
-        uint32('literal').uint32('call-ops-code').
+        uint32('literal').uint32('call-data-code').
         uint32('dpush').
         uint32('return0');
   });
@@ -2065,6 +2256,14 @@ uint32('docode').
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
+  deffn('dovar', function(asm) {
+    // entry
+    asm.uint32('literal').uint32('variable-peeker-code').
+        uint32('arg0').
+        uint32('set-dict-entry-code').
+        uint32('return0');
+  });
+
   deffn('defvar', function(asm) {
     // value name
     asm.uint32('arg0').
@@ -2180,7 +2379,7 @@ uint32('docode').
     asm. // get tokenizer
         uint32('*tokenizer*').
         //uint32('dup').
-        //uint32('call'). // tokenizer
+        //uint32('exec'). // tokenizer
         // read a token
         uint32('next-token'). // tokenizer new-tokenizer token
         uint32('rot'). // token new-tokenizer tokenizer
@@ -2223,7 +2422,7 @@ uint32('docode').
         uint32('ifthenjump').
         uint32('swap'). // lookup token
         uint32('drop'). // lookup
-        uint32('call'). // expecting no return
+        uint32('exec'). // expecting no return
         uint32('literal').uint32('eval-string-inner').
         uint32('jump');
     asm.label('eval-string-not-found'). // token lookup
@@ -2247,7 +2446,47 @@ uint32('docode').
         uint32('set-var').
         uint32('return0');
   });
-  
+
+  deffn('compile-execute', function(asm) {
+    // token
+    asm.uint32('arg0').
+        uint32('null?').
+        uint32('pause').
+        uint32('literal').uint32('compile-execute-done').
+        uint32('ifthenjump').
+        uint32('immediate-lookup'). // token lookup; fixme: tail call needs to eat caller's frame?
+        uint32('dup'). // token lookup lookup
+        uint32('not').
+        uint32('literal').uint32('compile-execute-not-found').
+        uint32('ifthenjump').
+        uint32('swap'). // lookup token
+        uint32('drop'). // lookup
+        uint32('tailcall1');
+    asm.label('compile-execute-not-found'). // token lookup
+        uint32('drop'). // token
+        uint32('dict').
+        uint32('dict-lookup'). // token dict lookup; fixme: tail call needs to eat caller's frame?
+        uint32('swap').
+        uint32('drop'). // token lookup
+        uint32('dup'). // token lookup lookup
+        uint32('not').
+        uint32('literal').uint32('compile-execute-not-found2').
+        uint32('ifthenjump').
+        uint32('swap'). // lookup token
+        uint32('drop'). // lookup
+        uint32('pause').
+        uint32('return1');
+    asm.label('compile-execute-not-found2'). // token lookup
+        uint32('drop'). // token
+        uint32('literal').uint32('literal').
+        uint32('swap').
+        uint32('pause').
+        uint32('return1');
+    asm.label('compile-execute-done').
+        uint32('drop').
+        uint32('pause').
+        uint32('return1');
+  });
   deffn('compile-string', function(asm) {
     // str
     asm.uint32('arg0').
@@ -2257,55 +2496,39 @@ uint32('docode').
         uint32('set-var').
         uint32('drop').
         uint32('drop').
+        uint32('unset-tokenizer-stop-flag').
         uint32('here').
-        uint32('unset-tokenizer-stop-flag');
-    asm.label('compile-string-inner').
-        uint32('local0').
+        uint32('literal').uint32('compile-string-inner').
+        uint32('tailcall1');
+  });
+
+  deffn('compile-string-inner', function(asm) {
+    asm. //label('compile-string-inner').
         uint32('*stop-tokenizing*').
         uint32('literal').uint32('compile-string-done').
         uint32('ifthenjump').
+        uint32('*tokenizer*').
         uint32('next-token'). // tokenizer new-tokenizer token
         uint32('rot'). // token new-tokenizer tokenizer
         uint32('drop'). // token new-tokenizer
-        uint32('store-local0'). // token
+        uint32('literal').uint32('the-tokenizer-sym').
+        uint32('set-var'). // token new-tok sym entry
+        uint32('drop3'). // token
         uint32('null?').
         uint32('literal').uint32('compile-string-done').
         uint32('ifthenjump').
-        uint32('immediate-lookup'). // token lookup; fixme: tail call needs to eat caller's frame?
-        uint32('dup'). // token lookup lookup
-        uint32('not').
-        uint32('literal').uint32('compile-string-not-found').
-        uint32('ifthenjump').
-        uint32('swap'). // lookup token
-        uint32('drop'). // lookup
-        uint32('call').
-        uint32('literal').uint32('compile-string-inner').
-        uint32('jump');
-    asm.label('compile-string-not-found'). // token lookup
-        uint32('drop'). // token
-        uint32('dict').
-        uint32('dict-lookup'). // token dict lookup; fixme: tail call needs to eat caller's frame?
-        uint32('swap').
-        uint32('drop'). // token lookup
-        uint32('dup'). // token lookup lookup
-        uint32('not').
-        uint32('literal').uint32('compile-string-not-found2').
-        uint32('ifthenjump').
-        uint32('swap'). // lookup token
-        uint32('drop'). // lookup
-        uint32('literal').uint32('compile-string-inner').
-        uint32('jump');
-    asm.label('compile-string-not-found2'). // token lookup
-        uint32('drop'). // token
-        uint32('literal').uint32('literal').
-        uint32('swap').
-        uint32('literal').uint32('compile-string-inner').
+        uint32('write-line').
+        uint32('pause').
+        uint32('compile-execute').
+        uint32('literal').uint32('compile-string-inner-code').
         uint32('jump');
     asm.label('compile-string-done'). // nulltoken
         uint32('drop').
-        uint32('local1').
+        uint32('arg0').
         uint32('cell-2').
+        uint32('pause').
         uint32('pop-to-seq').
+        uint32('pause').
         uint32('return1');
   });
 
@@ -2466,6 +2689,38 @@ uint32('docode').
         uint32('return1');
   });
 
+  deffn('tail-call-test-1', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32(0).
+        uint32('equals').
+        uint32('literal').uint32('tail-call-test-1-done').
+        uint32('ifthenjump').
+        uint32('literal').uint32(HELO).
+        uint32('write-word').
+        uint32('arg0').
+        uint32('literal').uint32(1).
+        uint32('int-sub').
+        uint32('literal').uint32('tail-call-test-1').
+        uint32('tailcall1');
+    asm.label('tail-call-test-1-done').
+        uint32('arg0').
+        uint32('return1');
+  });
+
+  deffn('tail-call-test', function(asm) {
+    asm.uint32('literal').uint32(longify('\r\nGO')).
+        uint32('write-word').
+        uint32('arg0').
+        uint32('literal').uint32('tail-call-test-1').
+        uint32('tailcall1');
+  });
+
+  deffn('cont-test', function(asm) {
+    asm.uint32('literal').uint32('write-line').
+        uint32('pause').
+        uint32('cont');
+  });
+  
   asm.label('program-size');
 
   asm.label('symbols-begin');
