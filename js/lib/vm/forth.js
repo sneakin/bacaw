@@ -26,7 +26,8 @@ var CRNL = longify("\r\n");
 var HELO = longify("HELO");
 var BYE = longify("\nBYE");
 var OK1 = longify(" OK ");
-var OK2 = longify("\r\n> ");
+var PS0 = longify("\r\n$ ");
+var PS1 = longify("\r\n> ");
 var ERR1 = longify("\r\nER");
 var ERR2 = longify("\r\n> ");
 
@@ -278,11 +279,41 @@ Forth.assembler = function(ds, cs, info) {
 
   function deffn(name, fn) {
     fns.push(name);
-    return fn(
-      asm.label(name + "-code").
-          load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-data-code').
-          label(name + '-ops')
-    );
+    fn(asm.label(name + "-code").
+       load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-data-code').
+       label(name + '-data').
+       uint32(name + '-end', true).
+       label(name + '-ops'));
+    
+    asm.label(name + '-end').
+        label(name + '-size', (asm.resolve(name + '-end') - asm.resolve(name + '-ops')) / 4).
+        uint32(TERMINATOR);
+
+    return asm;
+  }
+
+  function opcodes(asm, def) {
+    def.split(/\s+/).map(function(e) {
+      if(e.length == 0) return;
+      
+      var m = e.match(/^(.+):$/);
+      if(m) {
+        asm.label(m[1]);
+      } else {
+        var m = e.match(/^\d+$/)
+        if(m) {
+          asm.uint32('literal').uint32(parseInt(e));
+        } else {
+          asm.uint32(e);
+        }
+      }
+    });
+  }
+  
+  function deffns(name, def) {
+    return deffn(name, function(asm) {
+      opcodes(asm, def);
+    });
   }
 
   asm.label('isr_reset').
@@ -375,6 +406,15 @@ Forth.assembler = function(ds, cs, info) {
         ret();
   });
 
+  defop('jumprel', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(EVAL_IP_REG, VM.CPU.REGISTERS.STATUS).
+        mov(EVAL_IP_REG, VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
+        ret();
+  });
+
   defop('eip', function(asm) {
     asm.push(EVAL_IP_REG).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
@@ -395,11 +435,25 @@ Forth.assembler = function(ds, cs, info) {
   });
   
   defop('call-data', function(asm) {
-    asm.push(VM.CPU.REGISTERS.R0).
-        push(EVAL_IP_REG).
+    asm.push(EVAL_IP_REG).
         //load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
         load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin-code').
+        ret();
+  });
+
+  defop('call-data-seq', function(asm) {
+    asm.push(EVAL_IP_REG).
+        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
+        inc(EVAL_IP_REG).uint32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin-code').
+        ret();
+  });
+
+  defop('jump-entry-data', function(asm) {
+    asm.load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
+        inc(EVAL_IP_REG).uint32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
         ret();
   });
 
@@ -411,6 +465,8 @@ Forth.assembler = function(ds, cs, info) {
   //    call arguments...
   //    caller's locals
   //    previous frame
+  var FRAME_SIZE = 4 * 2;
+
   defop('begin', function(asm) {
     asm.push(FP_REG).
         mov(FP_REG, VM.CPU.REGISTERS.SP).
@@ -432,7 +488,7 @@ Forth.assembler = function(ds, cs, info) {
         label('quit-done').
         // move SP
         mov(VM.CPU.REGISTERS.SP, FP_REG).
-        inc(VM.CPU.REGISTERS.SP).uint32(12).
+        inc(VM.CPU.REGISTERS.SP).uint32(FRAME_SIZE).
         ret();
   });
 
@@ -441,6 +497,12 @@ Forth.assembler = function(ds, cs, info) {
     asm.
         load(EVAL_IP_REG, 0, FP_REG).int32(4).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('end-code');
+  });
+
+  defop('end-frame', function(asm) {
+    asm.load(FP_REG, 0, FP_REG).uint32(0).
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
 
   // Ends the current frame.
@@ -465,25 +527,27 @@ Forth.assembler = function(ds, cs, info) {
         ret();
   });
   
-  var FRAME_SIZE = 4 * 4;
-
   defop('returnN', function(asm) {
     asm.
         // copy values between FP and SP up over the frame
         // exit frame
-        pop(VM.CPU.REGISTERS.R0). // N
+        // save the number of words
+        pop(VM.CPU.REGISTERS.R0).
         mov(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.SP).
+        // pop frame
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
-        pop(VM.CPU.REGISTERS.R2).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('shift-stack-code');
   });
   
   defop('shift-stack', function(asm) {
     asm.
         // R1: old SP
-        // R0: number of bytes
+        // R0: number of words
+        load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(4).
+        cls(VM.CPU.STATUS.NUMERICS).
+        muli(VM.CPU.REGISTERS.R2, VM.CPU.REGISTERS.STATUS).
         cls(VM.CPU.STATUS.NUMERICS).
         addi(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
         label('shift-stack-loop').
@@ -494,6 +558,8 @@ Forth.assembler = function(ds, cs, info) {
         push(VM.CPU.REGISTERS.R2).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('shift-stack-loop');
   });
+
+  deffns('test-returnN', "7 8 9 3 pause returnN");
   
   defop('return1', function(asm) {
     asm.
@@ -506,8 +572,8 @@ Forth.assembler = function(ds, cs, info) {
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
-        // overwrite call's argument
-        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        // call's argument
+        push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
 
@@ -523,8 +589,8 @@ Forth.assembler = function(ds, cs, info) {
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
-        // overwrite call's argument
-        store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        // call's arguments
+        push(VM.CPU.REGISTERS.R1).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
@@ -536,7 +602,16 @@ Forth.assembler = function(ds, cs, info) {
         pop(FP_REG).
         pop(EVAL_IP_REG).
         pop(VM.CPU.REGISTERS.R0).
-        pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
+  defop('return-2', function(asm) {
+    asm.
+        // exit frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        inc(VM.CPU.REGISTERS.SP).uint32(8).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
@@ -546,10 +621,31 @@ Forth.assembler = function(ds, cs, info) {
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
-        pop(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
+  defop('return1-n', function(asm) {
+    asm.
+        // save number cells to pop
+        pop(VM.CPU.REGISTERS.R0).
+        // save a return value
+        pop(VM.CPU.REGISTERS.R1).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // drop N arguments
+        load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(4).
+        cls(VM.CPU.STATUS.NUMERICS).
+        muli(VM.CPU.REGISTERS.R2, VM.CPU.REGISTERS.STATUS).
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.STATUS).
+        mov(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.R0).
+        // save arg and call
+        push(VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
   defop('tailcall', function(asm) {
     asm.
         // save where to call
@@ -558,17 +654,16 @@ Forth.assembler = function(ds, cs, info) {
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
-        // overwrite call's argument
-        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
-        //push(VM.CPU.REGISTERS.R0).
+        // place to call
+        push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
   });
   
   defop('cont', function(asm) {
-    asm.
+    asm.pop(EVAL_IP_REG).
         // pop frame
         load(FP_REG, 0, FP_REG).uint32(0).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
   defop('tailcall1', function(asm) {
@@ -581,8 +676,8 @@ Forth.assembler = function(ds, cs, info) {
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
-        // overwrite call's argument
-        store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        // call's argument
+        push(VM.CPU.REGISTERS.R1).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
   });
@@ -619,10 +714,8 @@ Forth.assembler = function(ds, cs, info) {
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
-        // overwrite call's argument
-        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
-        //store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
-        //push(VM.CPU.REGISTERS.R0).
+        // call's argument
+        push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('call-op');
   });
   
@@ -691,20 +784,25 @@ Forth.assembler = function(ds, cs, info) {
   });
   
   defop('drop', function(asm) {
-    asm.
-        pop(VM.CPU.REGISTERS.R0).
+    asm.inc(VM.CPU.REGISTERS.SP).uint32(4).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
 
   defop('drop2', function(asm) {
-    asm.
-        pop(VM.CPU.REGISTERS.R0).
-        pop(VM.CPU.REGISTERS.R0).
+    asm.inc(VM.CPU.REGISTERS.SP).uint32(8).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
   defop('drop3', function(asm) {
     asm.inc(VM.CPU.REGISTERS.SP).uint32(4 * 3).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
+  defop('dropn', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.STATUS).
+        mov(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
@@ -739,6 +837,16 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
+  defop('pick', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.STATUS).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.R0).uint32(0).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
+        ret();
   });
   
   defop('peek', function(asm) {
@@ -865,12 +973,30 @@ Forth.assembler = function(ds, cs, info) {
   
   defop('ifthenjump', function(asm) { // condition addr
     asm.
+        // compare arg1 w/ 0
         pop(VM.CPU.REGISTERS.R2).
         pop(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
         cmpi(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.R1).
         load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('next-code').
+        // perform jump if != 0
         mov(EVAL_IP_REG, VM.CPU.REGISTERS.R2).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
+        ret();
+  });
+  
+  defop('ifthenreljump', function(asm) { // condition addr
+    asm.
+        // compare arg1 w/ 0
+        pop(VM.CPU.REGISTERS.R0).
+        pop(VM.CPU.REGISTERS.R2).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(0).
+        cmpi(VM.CPU.REGISTERS.R2, VM.CPU.REGISTERS.R1).
+        load(VM.CPU.REGISTERS.IP, VM.CPU.STATUS.ZERO, VM.CPU.REGISTERS.INS).uint32('next-code').
+        // inc eval ip if != 0
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(EVAL_IP_REG, VM.CPU.REGISTERS.STATUS).
+        mov(EVAL_IP_REG, VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
         ret();
   });
@@ -896,37 +1022,51 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
+  defop('return-address', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(4).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
   defop('args', function(asm) {
     asm.mov(VM.CPU.REGISTERS.R0, FP_REG).
-        inc(VM.CPU.REGISTERS.R0).uint32(FRAME_SIZE - 4).
+        inc(VM.CPU.REGISTERS.R0).uint32(FRAME_SIZE).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
   defop('arg0', function(asm) {
     asm.
-        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE - 4).
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
   defop('arg1', function(asm) {
     asm.
-        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE).
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE + 4).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
   defop('arg2', function(asm) {
     asm.
-        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE + 4).
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE + 8).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
   defop('arg3', function(asm) {
     asm.
-        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE + 8).
+        load(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(FRAME_SIZE + 12).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
+  defop('locals', function(asm) {
+    asm.mov(VM.CPU.REGISTERS.R0, FP_REG).
+        dec(VM.CPU.REGISTERS.R0).uint32(4).
         push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
@@ -979,9 +1119,15 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
+  defop('store-local2', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        store(VM.CPU.REGISTERS.R0, 0, FP_REG).uint32(-12).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
   defop('drop-frame', function(asm) {
     asm.
-        inc(VM.CPU.REGISTERS.SP).uint32(FRAME_SIZE).
+        inc(VM.CPU.REGISTERS.SP).uint32(FRAME_SIZE + 4).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
@@ -1009,6 +1155,27 @@ Forth.assembler = function(ds, cs, info) {
 
   defop('dmove', function(asm) {
     asm.pop(HEAP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
+  defop('dallot', function(asm) {
+    asm.// store buffer's length
+        inc(HEAP_REG).uint32(4).
+        pop(VM.CPU.REGISTERS.R0).
+        store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
+        push(HEAP_REG).
+        // calc byte size
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(4).
+        cls(VM.CPU.STATUS.NUMERICS).
+        muli(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
+        // increase heap ptr
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(HEAP_REG, VM.CPU.REGISTERS.STATUS).
+        inc(VM.CPU.REGISTERS.R0).uint32(8).
+        mov(HEAP_REG, VM.CPU.REGISTERS.R0).
+        // terminate seq
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(TERMINATOR).
+        store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(-4).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
@@ -1066,19 +1233,17 @@ Forth.assembler = function(ds, cs, info) {
     // + "lit foo lookup ] lit foo write-line return0 [ set-colon-def \r\n"
     + "return0\r\n"
   ));
-  
-  asm.label('bootstrap-script').bytes(cellpad(
-    //"zero *stop-tokenizing* defvar drop\r\n"
-    "write-helo bootstrap-loop quit\r\n"
-  ));
+
+  deffns('boot-more',
+         'literal bootstrap-script eval-string');
 
   deffn('bootstrap', function(asm) {
     asm.
         uint32('dict-init').
-        //uint32('literal').uint32('bootstrap-script').
-        //uint32('compile-string').
         //uint32('swap').uint32('drop').
         //uint32('call-seq').
+        uint32('eval-loop').
+        uint32('write-crnl').
         uint32('bootstrap-loop').
         uint32('return0');
   });
@@ -1241,14 +1406,19 @@ uint32('docode').
         uint32('return0');
   });
 
-  deffn('lit', function(asm) {
-    asm.uint32('read-token').uint32('return1');
-  });
-
   deffn('prompt', function(asm) {
     asm.uint32('bright').
         uint32('yellow').
-        uint32('literal').uint32(OK2).
+        uint32('literal').uint32(PS1).
+        uint32('write-word').
+        uint32('color-reset').
+        uint32('return0');
+  });
+  
+  deffn('prompt0', function(asm) {
+    asm.uint32('bright').
+        uint32('yellow').
+        uint32('literal').uint32(PS0).
         uint32('write-word').
         uint32('color-reset').
         uint32('return0');
@@ -1256,8 +1426,8 @@ uint32('docode').
   
   deffn('bootstrap-loop', function(asm) {
     asm.label('bootstrap-loop-inner').
-        uint32('write-ok').
-        uint32('prompt').
+        uint32('write-status').
+        uint32('prompt0').
         uint32('read-token').
         //uint32('write-string').
         //uint32('write-string-rev').
@@ -1352,61 +1522,32 @@ uint32('docode').
         uint32('poke').
         uint32('return0');
   });
-  deffn('dict-entry-next', function(asm) {
-    asm.uint32('arg0').
-        uint32('cell+3').
-        uint32('peek').
-        uint32('return1');
-  });
-  deffn('dict-lookup', function(asm) {
-    asm.
-        uint32('arg0').
-        label('dict-lookup-loop').
-        uint32('terminator?').
-        uint32('literal').uint32('dict-lookup-fail').
-        uint32('ifthenjump').
-        uint32('dict-entry-name').
-        uint32('arg1').
-        uint32('string-equal').
-        uint32('literal').uint32('dict-lookup-found').
-        uint32('ifthenjump').
-        uint32('drop').
-        uint32('drop').
-        uint32('dict-entry-next').
-        uint32('literal').uint32('dict-lookup-loop').
-        uint32('jump');
-    asm.label('dict-lookup-fail').
-        uint32('literal').uint32(0).
-        uint32('return1');
-    asm.label('dict-lookup-found').
-        //uint32('arg0').
-        uint32('drop').
-        uint32('drop').
-        uint32('return1');
-  });
+  deffns('dict-entry-next',
+         "arg0 literal dict-entry-next-ok ifthenjump\n" +
+         "0 return1\n" +
+         "dict-entry-next-ok: arg0 cell+3 peek return1\n");
 
-  deffn('create', function(asm) {
-    asm.uint32('arg0').
-        uint32('literal').uint32(0).
-        uint32('literal').uint32(0).
-        uint32('add-dict').
-        uint32('return1');
-  });
-  deffn('docol>', function(asm) {
-    asm.uint32('literal').uint32('call-data-code').
-        uint32('arg0').
-        uint32('set-dict-entry-code').
-        // todo enter compile mode
-        uint32('return0');
-  });
-
-  deffn('\'', function(asm) {
-    asm.uint32('lit').
-        uint32('dict').
-        uint32('dict-lookup').
-        uint32('return1');
-  });
+  deffns('set-dict-entry-next',
+         "arg1 arg0 cell+3 swapdrop poke return0");
   
+  deffns('dict-lookup-parent',
+         "arg0\n" +
+         "dict-lookup-parent-loop:\n" +
+         "dict-entry-next\n" +
+         "terminator? literal dict-lookup-parent-fail ifthenjump\n" +
+         "dict-entry-name arg1 string-equal literal dict-lookup-parent-found ifthenjump\n" +
+         "drop2 swapdrop literal dict-lookup-parent-loop jump\n" +
+         "dict-lookup-parent-fail: 0 return1\n" +
+         "dict-lookup-parent-found: drop3 return1");
+  
+  deffns('dict-lookup',
+         // check dict's head
+         "arg0 dict-entry-name arg1 string-equal literal dict-lookup-top ifthenjump\n" +
+         // search the list
+         "arg1 arg0 dict-lookup-parent dict-entry-next return1\n" +
+         // is the head
+         "dict-lookup-top: arg0 return1");
+
   deffn('dict-each', function(asm) {
     asm.
         uint32('arg0').
@@ -1434,11 +1575,31 @@ uint32('docode').
         uint32('return0');
   });
   
+  deffn('write-dict-entry-data', function(asm) {
+    asm.uint32('arg0').
+        uint32('dict-entry-data').
+        uint32('write-unsigned-int').
+        uint32('return0');
+  });
+  
+  deffn('write-dict-entry-code', function(asm) {
+    asm.uint32('arg0').
+        uint32('dict-entry-code').
+        uint32('write-unsigned-int').
+        uint32('return0');
+  });
+  
   deffn('write-dict-entry-kind', function(asm) {
     asm.uint32('arg0').
         // functions
         uint32('dict-entry-code').
         uint32('literal').uint32('call-data-code').
+        uint32('equals').
+        uint32('literal').uint32('write-dict-entry-kind-func').
+        uint32('ifthenjump').
+        // also have sequences
+        uint32('dict-entry-code').
+        uint32('literal').uint32('call-data-seq-code').
         uint32('equals').
         uint32('literal').uint32('write-dict-entry-kind-func').
         uint32('ifthenjump').
@@ -1449,23 +1610,34 @@ uint32('docode').
         uint32('literal').uint32('write-dict-entry-kind-var').
         uint32('ifthenjump').
         // asm
-        uint32('literal').uint32(longify("ASM\t")).
+        uint32('literal').uint32(longify("ASM ")).
         uint32('write-word').
         uint32('return0');
     asm.label('write-dict-entry-kind-func').
-        uint32('literal').uint32(longify("FUN\t")).
+        uint32('literal').uint32(longify("FUN ")).
         uint32('write-word').
         uint32('return0');
     asm.label('write-dict-entry-kind-var').
-        uint32('literal').uint32(longify("VAR\t")).
+        uint32('literal').uint32(longify("VAR ")).
         uint32('write-word').
+        uint32('return0');
+  });
+
+  deffn('write-tab', function(asm) {
+    asm.uint32('literal').uint32(longify("\t")).
+        uint32('write-byte').
         uint32('return0');
   });
   
   deffn('write-dict-entry', function(asm) {
     asm.uint32('arg0').
         uint32('write-dict-entry-kind').
+        uint32('write-tab').
         uint32('write-dict-entry-name').
+        uint32('write-tab').
+        uint32('write-dict-entry-code').
+        uint32('write-tab').
+        uint32('write-dict-entry-data').
         uint32('write-crnl').
         uint32('return0');
   });
@@ -1483,6 +1655,21 @@ uint32('docode').
         load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(8).
         store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(8).
         store(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
+  defop('rotdrop', function(asm) {
+    // a b c -> c b
+    asm.pop(VM.CPU.REGISTERS.R0).
+        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
+  defop('rotdrop2', function(asm) {
+    // a b c -> c
+    asm.pop(VM.CPU.REGISTERS.R0).
+        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
+        pop(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
 
@@ -1574,7 +1761,43 @@ uint32('docode').
         uint32('return0');
   });
   
-  deffn('string-length', function(asm) {
+  deffn('write-string-n', function(asm) {
+    asm.
+        uint32('arg1').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('dup').
+        uint32('arg0').
+        uint32('cell*').
+        uint32('swapdrop').
+        uint32('int-add').
+        uint32('swap').
+        uint32('literal').uint32('write-string-n-loop').
+        uint32('jump');
+    asm.label('write-string-n-loop').
+        uint32('dup').
+        uint32('peek').
+        uint32('dup').
+        uint32('literal').uint32(TERMINATOR).
+        uint32('equals').
+        uint32('literal').uint32('write-string-n-done').
+        uint32('ifthenjump').
+        uint32('write-byte').
+        uint32('literal').uint32(4).
+        uint32('int-add').
+        uint32('2dup').
+        uint32('equals').
+        uint32('literal').uint32('write-string-n-done').
+        uint32('ifthenjump').
+        uint32('literal').uint32('write-string-n-loop').
+        uint32('jump');
+    asm.label('write-string-n-done').
+        uint32('drop').
+        uint32('drop').
+        uint32('return0');
+  });
+  
+  deffn('seq-length', function(asm) {
     asm.
         uint32('arg0').
         uint32('peek').
@@ -1583,7 +1806,7 @@ uint32('docode').
   deffn('string-byte-size', function(asm) {
     asm.
         uint32('arg0').
-        uint32('string-length').
+        uint32('seq-length').
         uint32('literal').uint32(4).
         uint32('int-mul').
         uint32('return1');
@@ -1638,38 +1861,41 @@ uint32('docode').
         uint32('arg1').
         uint32('return1');
   });
-  deffn('set-arg0', function(asm) {
-    asm.uint32('current-frame').
-        uint32('parent-frame').
-        uint32('parent-frame').
-        uint32('literal').uint32(FRAME_SIZE - 4).
-        uint32('int-add').
-        uint32('arg0').
-        uint32('poke').
-        uint32('return-1');
-  });
-  deffn('set-arg1', function(asm) {
-    asm.uint32('current-frame').
-        uint32('parent-frame').
-        uint32('parent-frame').
-        uint32('literal').uint32(FRAME_SIZE).
-        uint32('int-add').
-        uint32('arg0').
-        uint32('poke').
-        uint32('return-1');
-  });
+
+  deffns('set-arg',
+         "current-frame parent-frame " + FRAME_SIZE + " arg0 cell* swapdrop int-add int-add\n" +
+         "arg1 swap poke return-2");
+  
+  deffns('set-arg0',
+         "current-frame parent-frame " + (FRAME_SIZE) + " int-add\n" +
+         "arg0 swap poke return-1");
+  
+  deffns('set-arg1',
+         "current-frame parent-frame " + (FRAME_SIZE + 4) + " int-add\n" +
+         "arg0 swap poke return-1");
+  
+  deffns('set-arg2',
+         "current-frame parent-frame " + (FRAME_SIZE + 8) + " int-add\n" +
+         "arg0 swap poke return-1");
+
+  deffns('set-arg3',
+         "current-frame parent-frame " + (FRAME_SIZE + 12) + " int-add\n" +
+         "arg0 swap poke return-1");
+
   // todo how to swapdrop with a frame in the way?
+  defop('swapdrop', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.R0).
+        store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  /*
   deffn('swapdrop', function(asm) {
     asm.
         uint32('arg0').
         uint32('set-arg1').
         uint32('return-1');
   });
-  // asm.label('2swapdrop').
-  //     uint32('literal').uint32('swapdrop').
-  //     uint32('exec').
-  //     uint32('literal').uint32('swapdrop').
-  //     uint32('jump');
+*/
   deffn('whitespace?', function(asm) {
     asm.
         uint32('arg0').
@@ -1684,23 +1910,11 @@ uint32('docode').
         uint32('literal').uint32('\t'.charCodeAt(0)).
         uint32('equals').
         uint32('or').
-        uint32('swap').uint32('drop').uint32('swap').uint32('drop').
-        //uint32('literal').uint32('swapdrop').
-        //uint32('exec').
-        //uint32('literal').uint32('swapdrop').
-        //uint32('exec').
+        uint32('rotdrop2').
         uint32('or').
-        uint32('swap').uint32('drop').uint32('swap').uint32('drop').
-        //uint32('literal').uint32('swapdrop').
-        //uint32('exec').
-        //uint32('literal').uint32('swapdrop').
-        //uint32('exec').
+        uint32('rotdrop2').
         uint32('or').
-        uint32('swap').uint32('drop').uint32('swap').uint32('drop').
-        //uint32('literal').uint32('swapdrop').
-        //uint32('exec').
-        //uint32('literal').uint32('swapdrop').
-        //uint32('exec').
+        uint32('rotdrop2').
         uint32('return1');
   });
   deffn('null?', function(asm) {
@@ -1836,6 +2050,8 @@ uint32('docode').
         uint32('return0');
   });
 
+  // super basic reader functions
+  
   deffn('eat-spaces', function(asm) {
     asm.label('eat-spaces-loop').
         uint32('read-byte').
@@ -1865,91 +2081,286 @@ uint32('docode').
         uint32('end-seq').
         uint32('return1');
   });
+
+  deffn('b-lit', function(asm) {
+    asm.uint32('read-token').uint32('return1');
+  });
+
+  deffn('b\'', function(asm) {
+    asm.uint32('b-lit').
+        uint32('dict').
+        uint32('dict-lookup').
+        uint32('return1');
+  });
+
+  // tokenizer with state
+  
+  deffn('tokenizer-str-offset', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+').
+        uint32('peek').
+        uint32('return1');
+  });
+
+  deffn('tokenizer-str', function(asm) {
+    asm.uint32('arg0').
+        uint32('return1');
+  });
+  
+  deffn('tokenizer-str-ptr', function(asm) {
+    asm.uint32('arg0').
+        uint32('peek').
+        uint32('arg0').
+        uint32('cell+').
+        uint32('swap').
+        uint32('drop').
+        uint32('peek').
+        uint32('int-add').
+        uint32('cell+'). // skip the seq's length
+        uint32('return1');
+  });
+  deffn('tokenizer-inc-str-offset', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+'). // ptr ptr+
+        uint32('dup'). // ptr ptr+ ptr+
+        uint32('peek'). // ptr ptr+ offset
+        uint32('cell+'). // ptr ptr+ offset offset+
+        uint32('swap').
+        uint32('drop'). // ptr ptr+ offset+
+        uint32('swap').
+        uint32('poke').
+        uint32('return0');
+  });
+  
+  deffn('tokenizer-peek-word', function(asm) {
+    asm.uint32('arg0').
+        uint32('tokenizer-exhausted?').
+        uint32('literal').uint32('tokenizer-peek-eos').
+        uint32('ifthenjump').
+        uint32('arg0').
+        uint32('tokenizer-str-ptr').
+        uint32('peek').
+        uint32('return1');
+    asm.label('tokenizer-peek-eos').
+        uint32('literal').uint32(0).
+        uint32('return1');
+  });
+
+  deffn('tokenizer-exhausted?', function(asm) {
+    asm.uint32('arg0').
+        uint32('peek').
+        uint32('seq-length').
+        uint32('cell*').
+        uint32('arg0').
+        uint32('tokenizer-str-offset').
+        uint32('swapdrop').
+        uint32('<').
+        uint32('return1');
+  });
+  
   deffn('tokenizer-next-word', function(asm) {
     asm.uint32('arg0').
-        uint32('dup').
+        uint32('tokenizer-exhausted?').
+        uint32('literal').uint32('tokenizer-next-word-eos').
+        uint32('ifthenjump').
+        uint32('tokenizer-str-ptr').
         uint32('peek').
         uint32('swap').
-        uint32('literal').uint32(4).
-        uint32('int-add').
+        uint32('tokenizer-inc-str-offset').
         uint32('swap').
-        uint32('return2');
+        uint32('return1'); // tokenizer cell
+
+    asm.label('tokenizer-next-word-eos').
+        uint32('literal').uint32(0).
+        uint32('return1');
   });
+
+  // todo use a function and refactor eat-spaces
+  
+  deffns('tokenizer-skip-until',
+         // tokenizer needle
+         "arg1\n" +
+         "tokenizer-skip-until-loop: tokenizer-next-word null? literal tokenizer-skip-until-done ifthenjump\n" +
+         "dup arg0 equals literal tokenizer-skip-until-done ifthenjump\n" +
+         "drop\n" +
+         "literal tokenizer-skip-until-loop jump\n" +
+         "tokenizer-skip-until-done: return0");
+
   deffn('tokenizer-eat-spaces', function(asm) {
     asm.
         uint32('arg0').
         label('tokenizer-eat-spaces-loop').
-        uint32('tokenizer-next-word').
+        uint32('tokenizer-peek-word').
         uint32('whitespace?').
         uint32('literal').uint32('tokenizer-eat-spaces-reloop').
         uint32('ifthenjump').
-        uint32('drop').
-        uint32('drop').
-        uint32('return1'); // old ptr
+        uint32('return0');
     asm.label('tokenizer-eat-spaces-reloop').
         uint32('drop').
-        uint32('swap').
-        uint32('drop'). // use new ptr
+        uint32('tokenizer-inc-str-offset').
         uint32('literal').uint32('tokenizer-eat-spaces-loop').
         uint32('jump');
   });
-  deffn('make-tokenizer', function(asm) {
-    // string -> tokenizer ready string
+
+  // fixme limit length read to buffer size
+  
+  deffns('tokenizer-read-until',
+         // tokenizer needle
+         "arg1 tokenizer-buffer-reset\n" +
+         "tokenizer-read-until-loop: tokenizer-next-word null? literal tokenizer-read-until-done ifthenjump\n" +
+         "dup arg0 equals literal tokenizer-read-until-done ifthenjump\n" +
+         "tokenizer-push drop\n" +
+         "literal tokenizer-read-until-loop jump\n" +
+         "tokenizer-read-until-done: drop tokenizer-finish-output return2");
+
+  // fixme: tokenizer should return start ptrs and lengths, try to eliminate usage of the buffer so "" and such can be unlimited.
+  
+  // string -> tokenizer ready string
+  // tokenizer structure: str-ptr str-offset token-seq token-seq-ptr
+  deffns('make-tokenizer',
+         "32 dallot\n" +
+         "arg0 dpush\n" +
+         "dhere 0 dpush swap dpush 0 dpush\n" +
+         "return1"
+        );
+  
+  deffn('tokenizer-buffer', function(asm) {
     asm.uint32('arg0').
-        uint32('literal').uint32(4).
-        uint32('int-add').
+        uint32('cell+2').
+        uint32('peek').
         uint32('return1');
   });
+  
+  deffn('tokenizer-buffer-start', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+2').
+        uint32('peek').
+        uint32('cell+').
+        uint32('return1');
+  });
+  
+  deffn('tokenizer-buffer-offset', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+3').
+        uint32('peek').
+        uint32('return1');
+  });
+  
+  deffn('tokenizer-buffer-ptr', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+2').
+        uint32('swapdrop').
+        uint32('peek').
+        uint32('arg0').
+        uint32('cell+3').
+        uint32('swapdrop').
+        uint32('peek').
+        uint32('int-add').
+        uint32('cell+2'). // skip the seq and fake lengths
+        uint32('return1');
+  });
+  
+  deffn('tokenizer-inc-buffer-offset', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell+3'). // ptr ptr+
+        uint32('dup'). // ptr ptr+ ptr+
+        uint32('peek'). // ptr ptr+ offset
+        uint32('cell+'). // ptr ptr+ offset offset+
+        uint32('swap').
+        uint32('drop'). // ptr ptr+ offset+
+        uint32('swap').
+        uint32('poke').
+        uint32('return0');
+  });
+
+  deffn('tokenizer-push', function(asm) {
+    // tokenizer token
+    asm.uint32('arg1').
+        uint32('tokenizer-buffer-ptr').
+        uint32('arg0').
+        uint32('swap').
+        uint32('poke').
+        uint32('tokenizer-inc-buffer-offset').
+        uint32('return0');
+  });
+
+  deffn('set-tokenizer-buffer-offset', function(asm) {
+    asm.uint32('arg1').
+        uint32('cell+3').
+        uint32('arg0').
+        uint32('swap').
+        uint32('poke').
+        uint32('return0');
+  });
+
+  deffn('fill', function(asm) {
+    asm.uint32('literal').uint32(0).
+        label('fill-loop').
+        uint32('dup').
+        uint32('arg1').
+        uint32('int-add').
+        uint32('literal').uint32(0).
+        uint32('swap').
+        uint32('poke').
+        uint32('cell+').
+        uint32('swapdrop').
+        uint32('dup').
+        uint32('arg0').
+        uint32('<=').
+        uint32('literal').uint32('fill-loop').
+        uint32('ifthenjump').
+        uint32('return0');
+  });
+  
+  deffn('tokenizer-buffer-reset', function(asm) {
+    asm.uint32('arg0').
+        uint32('literal').uint32(0).
+        uint32('set-tokenizer-buffer-offset').
+        uint32('swapdrop').
+        uint32('tokenizer-buffer-ptr').
+        uint32('literal').uint32(32*4).
+        uint32('fill').
+        uint32('return0');
+  });
+
+  deffn('set-tokenizer-buffer-length', function(asm) {
+    asm.uint32('arg0').
+        uint32('arg1').
+        uint32('poke').
+        uint32('return0');
+  });
+  
   deffn('next-token', function(asm) {
     // tokenizer -> string-past-token token
     asm.
         uint32('arg0').
         uint32('tokenizer-eat-spaces').
-        uint32('swap').uint32('drop').
-        // start token
-        uint32('start-seq').
-        uint32('swap'). // token string
-    label('tokenizer-loop').
-        uint32('tokenizer-next-word'). // token string next-string byte
+        uint32('tokenizer-buffer-reset');
+    asm.label('tokenizer-loop').
+        uint32('tokenizer-next-word'). // tokenizer byte
         uint32('null?').
-        uint32('literal').uint32('tokenizer-eos').
+        uint32('literal').uint32('tokenizer-done').
         uint32('ifthenjump').
         uint32('whitespace?').
         uint32('literal').uint32('tokenizer-done').
         uint32('ifthenjump').
-        uint32('dpush'). // token string next-string
-        uint32('swap'). // token next-string string
-        uint32('drop'). // token next-string
+        uint32('tokenizer-push').
+        uint32('drop'). // tokenizer
         uint32('literal').uint32('tokenizer-loop').
         uint32('jump');
-    asm.label('tokenizer-eos').
-        uint32('drop'). // last byte
-        uint32('dup2'). // token string next-string token
-        uint32('dhere').
-        uint32('swap').
-        uint32('int-sub').
-        uint32('literal').uint32(4).
-        uint32('<').
-        uint32('literal').uint32('tokenizer-abort').
-        uint32('ifthenjump').
-        uint32('dup2'). // token string next-string token
-        uint32('literal').uint32('tokenizer-done-done').
-        uint32('jump');
-    asm.label('tokenizer-abort').
-        uint32('dup2'). // token string next-string token
-        uint32('abort-seq').
-        uint32('arg0').
-        uint32('literal').uint32(0).
-        uint32('return2');
-    asm.label('tokenizer-done').  // token string next-string last-byte
-        uint32('drop'). // token string next-string
-        uint32('swap').
-        uint32('drop'); // token next-string
+    asm.label('tokenizer-done').  // tokenizer last-byte
+        uint32('drop'); // tokenizer
     asm.label('tokenizer-done-done').
-        uint32('swap'). // next-string token
-        uint32('end-seq').
-        uint32('return2'); // next-string token
+        uint32('tokenizer-finish-output').
+        uint32('return2'); // next-token length
   });
+
+  deffns('tokenizer-finish-output',
+         "arg0 TERMINATOR tokenizer-push drop\n" +
+         "tokenizer-buffer-start swap\n" +
+         "tokenizer-buffer-offset swapdrop cell/ swapdrop 1 int-sub set-tokenizer-buffer-length\n" +
+         "return2");
+  
   deffn('read-line', function(asm) {
     asm.uint32('start-seq').
         uint32('literal').uint32('read-line-loop').
@@ -1983,29 +2394,186 @@ uint32('docode').
   });
   
   deffn('map-seq', function(asm) {
+    // ( seq entry )
     asm.uint32('arg1').
         uint32('cell+').
+        uint32('swapdrop').
         label('map-seq-loop').
         // seq
+        uint32('local0').
         uint32('head-seq'). // seq head
-        uint32('terminator?').
+        uint32('swapdrop'). // head
+        uint32('null?').
         uint32('literal').uint32('map-seq-done').
         uint32('ifthenjump').
         uint32('arg0').
-        //uint32('call-op'). // seq head result
-        uint32('exec'). // seq head result
-        uint32('swap'). // seq result head
-        uint32('drop'). // seq result
-        uint32('swap'). // result seq
+        uint32('exec'). // head result
+        uint32('local0').
         uint32('tail-seq'). // result seq tail
-        uint32('swap'). // result tail seq
-        uint32('drop'). // result tail
+        uint32('store-local0').
+        uint32('drop2').
         uint32('literal').uint32('map-seq-loop').
         uint32('jump').
         label('map-seq-done').
         // todo pop of the results
         uint32('return0');
   });
+
+  deffn('copy', function(asm) {
+    asm.uint32('literal').uint32(0).
+        label('copy-loop').
+        // dest
+        uint32('local0').
+        uint32('arg1').
+        uint32('int-add').
+        // src
+        uint32('local0').
+        uint32('arg2').
+        uint32('int-add').
+        uint32('peek').
+        // store
+        uint32('swap').
+        uint32('poke').
+        // inc
+        uint32('local0').
+        uint32('cell+').
+        uint32('swapdrop').
+        uint32('store-local0').
+        // loop?
+        uint32('dup').
+        uint32('arg0').
+        uint32('<=').
+        uint32('literal').uint32('copy-loop').
+        uint32('ifthenjump').
+        uint32('return0');
+  });
+
+  deffn('copydown', function(asm) {
+    // src dest num-bytes
+    asm.uint32('arg0').
+        uint32('cell-').uint32('swapdrop').
+        label('copydown-loop').
+        // dest
+        uint32('local0').
+        uint32('arg1').
+        uint32('int-add').
+        // src
+        uint32('local0').
+        uint32('arg2').
+        uint32('int-add').
+        uint32('peek').
+        // store
+        uint32('swap').
+        uint32('poke').
+        // dec
+        uint32('local0').
+        uint32('cell-').
+        uint32('swapdrop').
+        uint32('store-local0').
+        // loop?
+        uint32('dup').
+        uint32('literal').uint32(0).
+        uint32('>=').
+        uint32('literal').uint32('copydown-loop').
+        uint32('ifthenjump').
+        uint32('return0');
+  });
+
+  deffn('copyrev', function(asm) {
+    // src dest num-bytes
+    asm.uint32('arg0').
+        uint32('cell-').uint32('swapdrop').
+        uint32('zero').
+        label('copyrev-loop').
+        // dest
+        uint32('local1').
+        uint32('arg1').
+        uint32('int-add').
+        // src
+        uint32('local0').
+        uint32('arg2').
+        uint32('int-add').
+        uint32('peek').
+        // store
+        uint32('swap').
+        uint32('poke').
+        // dec
+        uint32('local0').
+        uint32('cell-').
+        uint32('swapdrop').
+        uint32('store-local0').
+        // inc
+        uint32('local1').
+        uint32('cell+').
+        uint32('swapdrop').
+        uint32('store-local1').
+        // loop?
+        uint32('dup').
+        uint32('arg0').
+        uint32('<').
+        uint32('literal').uint32('copyrev-loop').
+        uint32('ifthenjump').
+        uint32('return0');
+  });
+
+  deffn('terminate-seq', function(asm) {
+    // ptr num-cells
+    asm.uint32('literal').uint32(TERMINATOR).
+        uint32('arg1').
+        uint32('arg0').
+        uint32('literal').uint32(1).
+        uint32('int-add').
+        uint32('cell*').
+        uint32('swapdrop').
+        uint32('int-add').
+        uint32('poke').
+        // set length
+        /*
+        uint32('arg0').
+        uint32('arg1').
+        uint32('pause').
+        uint32('poke').
+        uint32('pause').
+*/
+        uint32('return0');
+  });
+  
+  deffn('intern-seq', function(asm) {
+    // seq-ptr num-cells
+    asm.// calc byte size & alloc
+        uint32('arg0').
+        uint32('dallot').
+        // copy
+        uint32('cell+').
+        uint32('arg1').
+        uint32('cell+').
+        uint32('swapdrop').
+        uint32('swap').
+        uint32('arg0').
+        uint32('cell*').
+        uint32('swapdrop').
+        uint32('copy').
+        uint32('drop3').
+        // terminate
+        uint32('arg0').
+        uint32('terminate-seq').
+        uint32('drop').
+        uint32('return1');
+  });
+
+  deffns('intern',
+         "arg0 dallot\n" +
+         // copy
+         "cell+ arg1 swap arg0 cell* swapdrop copy drop3\n" +
+         // terminate
+         "arg0 terminate-seq drop return1");
+
+  deffns('internrev',
+         "arg0 dallot\n" +
+         // copy
+         "cell+ arg1 swap arg0 cell* swapdrop copyrev drop3\n" +
+         // terminate
+         "arg0 terminate-seq drop return1");
   
   deffn('tokenize', function(asm) {
     asm.uint32('literal').uint32(TERMINATOR).
@@ -2014,19 +2582,21 @@ uint32('docode').
         uint32('swap').uint32('drop');
     asm.label('tokenize-loop').
         uint32('next-token').
-        uint32('dup').
-        uint32('not').
+        uint32('dup'). // tokenizer token length length
+        uint32('literal').uint32(0).
+        uint32('equals').
         uint32('literal').uint32('tokenize-done').
         uint32('ifthenjump').
+        uint32('intern-seq'). // tokenizer token length symbol
+        uint32('rotdrop2'). // tokenizer symbol
         uint32('write-line').
-        uint32('rot').
-        uint32('drop').
+        uint32('swap'). // symbol tokenizer
         uint32('literal').uint32('tokenize-loop').
         uint32('jump');
     asm.label('tokenize-done').
+        uint32('drop'). // the length
         uint32('drop'). // the null token
         uint32('drop'). // the state
-        uint32('drop'). // the old state
         // pop the tokens into a list
         uint32('start-seq');
     asm.label('tokenize-pop-loop').
@@ -2055,8 +2625,7 @@ uint32('docode').
         uint32('not').
         uint32('literal').uint32('each-token-done').
         uint32('ifthenjump').
-        uint32('rot'). // token next-tokenizer tokenizer
-        uint32('drop'). // token next-tokenizer
+        uint32('rotdrop'). // token next-tokenizer
         uint32('literal').uint32('each-token-loop').
         uint32('jump');
     asm.label('each-token-done').
@@ -2108,9 +2677,10 @@ uint32('docode').
         uint32('return1');
   });
   
-  deffn('immediate', function(asm) {
-    asm.uint32('arg0').
-        uint32('dict-entry-name').
+  deffn('add-immediate-as', function(asm) {
+    // ( entry name )
+    asm.uint32('arg1').
+        uint32('arg0').
         uint32('swap').
         uint32('dict-entry-code').
         uint32('swap').
@@ -2121,9 +2691,14 @@ uint32('docode').
         uint32('return0');
   });
 
-  deffn('write-line', function(asm) {
-    asm.uint32('arg0').
-        uint32('write-string').
+  deffns('add-immediate', "arg0 dict-entry-name add-immediate-as return0");
+
+  deffns('write-line', "arg0 write-string write-crnl return0");
+
+  deffn('write-line-n', function(asm) {
+    asm.uint32('arg1').
+        uint32('arg0').
+        uint32('write-string-n').
         uint32('write-crnl').
         uint32('return0');
   });
@@ -2318,11 +2893,19 @@ uint32('docode').
         uint32('return0');
   });
 
-  deffn('dict-forget', function(asm) {
-    // name dict
-    // find parent
-    // link parent to child
-  });
+  deffns('drop-dict', 'dict dict-entry-next set-dict return0');
+  
+  deffns('dict-forget',
+         // (name dict)
+         // find parent
+         "arg1 arg0 dict-lookup-parent\n" +
+         "dup not literal dict-forget-done ifthenjump\n" +
+         //"dup dict equals literal dict-forget-top ifthenjump\n" +
+         "dict-entry-next dict-entry-next\n" + // parent child grandkid
+         // link parent to child
+         "rot set-dict-entry-next\n" +
+         "dict-forget-done:\n" +
+         "return0");
 
   deffn('peeker', function(asm) {
     // addr
@@ -2375,63 +2958,98 @@ uint32('docode').
         uint32('return0');
   });
   
-  deffn('e-lit', function(asm) {
-    asm. // get tokenizer
-        uint32('*tokenizer*').
-        //uint32('dup').
-        //uint32('exec'). // tokenizer
-        // read a token
-        uint32('next-token'). // tokenizer new-tokenizer token
-        uint32('rot'). // token new-tokenizer tokenizer
-        uint32('drop'). // token new-tokenizer
-        // update *tokenizer*
-        uint32('literal').uint32('the-tokenizer-sym').
-        uint32('set-var').
-        // make a return
-        uint32('drop'). // token tokenizer sym entry
-        uint32('drop'). // token tokenizer sym
-        uint32('drop'). // token
-        uint32('return1');
-  });
+  deffns('lit',
+         "*tokenizer* next-token dup not literal lit-no-token ifthenjump\n" +
+         "intern-seq return1\n" +
+         "lit-no-token: literal eos-sym error return0");
+  deffns('c-lit',
+         "literal literal lit return2");
+
+  deffns("'",
+         "*tokenizer* next-token not literal '-no-token ifthenjump\n" +
+         "dict dict-lookup return1\n" +
+         "'-no-token: literal eos-sym error return0");
+  deffns("c-'",
+         "literal literal ' lit return2");
   
-  deffn('eval-string', function(asm) {
-    // str
-    asm.uint32('arg0').
-        uint32('make-tokenizer').
-        uint32('swap').uint32('drop'). // tokenizer
-        uint32('literal').uint32('the-tokenizer-sym').
-        uint32('set-var').
-        uint32('drop').
-        uint32('drop');
-    asm.label('eval-string-inner').
-        uint32('local0').
-        uint32('next-token'). // tokenizer new-tokenizer token
-        uint32('rot'). // token new-tokenizer tokenizer
-        uint32('drop'). // token new-tokenizer
-        uint32('store-local0'). // token
-        uint32('null?').
-        uint32('literal').uint32('eval-string-done').
-        uint32('ifthenjump').
-        uint32('dict').
-        uint32('dict-lookup'). // token dict lookup; fixme: tail call needs to eat caller's frame?
-        uint32('swap').
-        uint32('drop'). // token lookup
-        uint32('dup'). // token lookup lookup
-        uint32('not').
-        uint32('literal').uint32('eval-string-not-found').
-        uint32('ifthenjump').
-        uint32('swap'). // lookup token
-        uint32('drop'). // lookup
-        uint32('exec'). // expecting no return
-        uint32('literal').uint32('eval-string-inner').
-        uint32('jump');
-    asm.label('eval-string-not-found'). // token lookup
-        uint32('drop'). // token
-        uint32('literal').uint32('eval-string-inner').
-        uint32('jump');
-    asm.label('eval-string-done'). // token
-        uint32('return0');
-  });
+  // fixme: need to read strings larger than the tokenizer's buffer
+  
+  deffns('"',
+         "*tokenizer* 34 tokenizer-read-until intern-seq return1");
+  deffns('c-"', "literal literal \" return2");
+  
+  deffns('wait-return',
+         "literal press-return-sym\n" +
+         "write-string flush-read-line return0");
+
+  deffns('write-status',
+         "*status* not literal write-status-ok ifthenjump\n" +
+         "write-err 0 literal *status*-sym set-var return0\n" +
+         "write-status-ok: write-ok return0");
+  
+  deffns('error',
+    // error-msg2 error-msg1
+        "bright red arg0 write-line color-reset\n" +
+        "arg1 write-line wait-return\n" +
+        "arg0 literal *status*-sym set-var\n" +
+         "0 literal *state*-sym set-var drop3\n" +
+        "end return0" // exit caller
+  );
+
+  // fixme a frame not linking to it's parent as the parent's link gets overwritten by data
+  deffns('eval-tokens',
+         // str
+         'eval-tokens-inner:\n' +
+         "*tokenizer* next-token\n" +  // tokenizer token length
+         "rotdrop swap\n" + // token length
+         "not literal eval-tokens-done ifthenjump\n" +
+         // compile lookup
+         "*state* not literal eval-tokens-lookup ifthenjump\n" +
+         "immediate-lookup dup not literal eval-tokens-compile-lookup ifthenjump\n" +
+         "swapdrop exec\n" +
+         "literal eval-tokens-inner jump\n" +
+         "eval-tokens-compile-lookup: drop\n" +
+         // lookup
+         "eval-tokens-lookup:\n" +
+         "dict dict-lookup swapdrop\n" + // token lookup
+         "dup not literal eval-tokens-not-found ifthenjump\n" +
+         // exec
+         "swapdrop *state* literal eval-tokens-inner ifthenjump\n" +  // lookup
+         "exec\n" +
+         "literal eval-tokens-inner jump\n" +
+         // try converting to a number
+         "eval-tokens-not-found:\n" + // token lookup
+         "drop\n" +  // token
+         "number not literal eval-tokens-not-number ifthenjump\n" +
+         "swapdrop\n" +
+         //"*state* not literal eval-tokens-skip-postpone ifthenjump\n" +
+         //"literal literal swap\n" +
+         "eval-tokens-skip-postpone:\n" +
+         "literal eval-tokens-inner jump\n" +
+         // error
+         "eval-tokens-not-number:\n" +
+         "drop literal not-found-sym error\n" +
+         "literal eval-loop-loop jump\n" +
+         // "return"
+         "eval-tokens-done: drop literal eval-loop-loop jump"
+        );
+
+  deffns('make-the-tokenizer',
+         "arg0 make-tokenizer\n" + // tokenizer
+         "literal the-tokenizer-sym set-var drop2\n" +
+         "return1");
+
+  deffns('eval-string',
+         "arg0 make-the-tokenizer eval-tokens");
+  
+  deffns('eval-loop',
+         "eval-loop-loop:\n" +
+         "write-status write-int prompt flush-read-line\n" +
+         "blue write-string color-reset\n" +
+         "make-the-tokenizer drop2\n" +
+         "literal eval-tokens-ops jump\n" +
+         "literal eval-loop-loop jump\n" +
+         "return0\n");
 
   deffn('unset-tokenizer-stop-flag', function(asm) {
     asm.uint32('literal').uint32(0).
@@ -2447,91 +3065,6 @@ uint32('docode').
         uint32('return0');
   });
 
-  deffn('compile-execute', function(asm) {
-    // token
-    asm.uint32('arg0').
-        uint32('null?').
-        uint32('pause').
-        uint32('literal').uint32('compile-execute-done').
-        uint32('ifthenjump').
-        uint32('immediate-lookup'). // token lookup; fixme: tail call needs to eat caller's frame?
-        uint32('dup'). // token lookup lookup
-        uint32('not').
-        uint32('literal').uint32('compile-execute-not-found').
-        uint32('ifthenjump').
-        uint32('swap'). // lookup token
-        uint32('drop'). // lookup
-        uint32('tailcall1');
-    asm.label('compile-execute-not-found'). // token lookup
-        uint32('drop'). // token
-        uint32('dict').
-        uint32('dict-lookup'). // token dict lookup; fixme: tail call needs to eat caller's frame?
-        uint32('swap').
-        uint32('drop'). // token lookup
-        uint32('dup'). // token lookup lookup
-        uint32('not').
-        uint32('literal').uint32('compile-execute-not-found2').
-        uint32('ifthenjump').
-        uint32('swap'). // lookup token
-        uint32('drop'). // lookup
-        uint32('pause').
-        uint32('return1');
-    asm.label('compile-execute-not-found2'). // token lookup
-        uint32('drop'). // token
-        uint32('literal').uint32('literal').
-        uint32('swap').
-        uint32('pause').
-        uint32('return1');
-    asm.label('compile-execute-done').
-        uint32('drop').
-        uint32('pause').
-        uint32('return1');
-  });
-  deffn('compile-string', function(asm) {
-    // str
-    asm.uint32('arg0').
-        uint32('make-tokenizer').
-        uint32('swap').uint32('drop'). // tokenizer
-        uint32('literal').uint32('the-tokenizer-sym').
-        uint32('set-var').
-        uint32('drop').
-        uint32('drop').
-        uint32('unset-tokenizer-stop-flag').
-        uint32('here').
-        uint32('literal').uint32('compile-string-inner').
-        uint32('tailcall1');
-  });
-
-  deffn('compile-string-inner', function(asm) {
-    asm. //label('compile-string-inner').
-        uint32('*stop-tokenizing*').
-        uint32('literal').uint32('compile-string-done').
-        uint32('ifthenjump').
-        uint32('*tokenizer*').
-        uint32('next-token'). // tokenizer new-tokenizer token
-        uint32('rot'). // token new-tokenizer tokenizer
-        uint32('drop'). // token new-tokenizer
-        uint32('literal').uint32('the-tokenizer-sym').
-        uint32('set-var'). // token new-tok sym entry
-        uint32('drop3'). // token
-        uint32('null?').
-        uint32('literal').uint32('compile-string-done').
-        uint32('ifthenjump').
-        uint32('write-line').
-        uint32('pause').
-        uint32('compile-execute').
-        uint32('literal').uint32('compile-string-inner-code').
-        uint32('jump');
-    asm.label('compile-string-done'). // nulltoken
-        uint32('drop').
-        uint32('arg0').
-        uint32('cell-2').
-        uint32('pause').
-        uint32('pop-to-seq').
-        uint32('pause').
-        uint32('return1');
-  });
-
   deffn('pop-to-seq', function(asm) {
     // start-ptr
     asm.uint32('start-seq').
@@ -2545,7 +3078,7 @@ uint32('docode').
         uint32('dpush').
         uint32('local1').
         uint32('local2').
-        uint32('<=').
+        uint32('<').
         uint32('literal').uint32('pop-to-seq-done').
         uint32('ifthenjump').
         uint32('local1').
@@ -2560,47 +3093,50 @@ uint32('docode').
         uint32('return1');
   });
 
-  deffn(']', function(asm) {
-    asm.uint32('read-line').
-        uint32('compile-string').
-        uint32('return1');
-  });
+  deffns('stack-find',
+         // ( needle )
+         "arg1\n" +
+         "stack-find-loop:\n" +
+         "local0 peek arg0 equals literal stack-find-done ifthenjump\n" +
+         "local0 cell+ store-local0 drop\n" +
+         "literal stack-find-loop jump\n" +
+         "stack-find-done: local0 return1"
+        );
+  
+  deffns('[', "1 literal *state*-sym set-var terminator return1");
 
-  deffn(']_', function(asm) {
+  deffns(']',
+         "0 literal *state*-sym set-var drop3\n" +
+         "args terminator stack-find swapdrop cell- swapdrop\n" +
+         "swap 2dup int-sub cell/ swapdrop 1 int-add internrev\n" +
+         "seq-length 1 int-add return1-n");
+  
+  deffn('create', function(asm) {
     asm.uint32('*tokenizer*').
-        uint32('compile-string').
+        uint32('next-token').
+        uint32('dup').uint32('not').uint32('literal').uint32('create-fail').
+        uint32('ifthenjump').
+        uint32('intern-seq').
+        uint32('literal').uint32(0).
+        uint32('literal').uint32(0).
+        uint32('add-dict').
         uint32('return1');
+    asm.label('create-fail').
+        uint32('literal').uint32('eos-sym').
+        uint32('error').
+        uint32('return0');
   });
 
-  deffn('[', function(asm) {
-    asm.uint32('literal').uint32(1).
-        uint32('literal').uint32('*stop-tokenizing*-sym').
-        uint32('set-var').
-        uint32('return0');
-  });
+  deffns('pause2',
+         "*debug* not literal pause2-done ifthenjump\n" +
+         "wait-return\n" +
+         "pause2-done: return0");
   
-  // fixme needs to write numbers
-  deffn('decompile-write', function(asm) {
-    asm.uint32('arg0').
-        uint32('terminator?').
-        uint32('literal').uint32('decompile-write-done').
-        uint32('ifthenjump').
-        uint32('dict-entry-name').
-        uint32('write-line').
-        uint32('return0').
-        label('decompile-write-done').
-        uint32('literal').uint32(longify(' NUL')).
-        uint32('write-word').
-        uint32('return0');
-  });
-  
-  deffn('decompile-seq', function(asm) {
-    asm.uint32('arg0').
-        uint32('literal').
-        uint32('decompile-write').
-        uint32('map-seq').
-        uint32('return0');
-  });
+  deffns('docol>',
+         "literal call-data-seq-code arg0 set-dict-entry-code [ return2")
+  deffns('endcol', "end drop2 literal return0 ] swap set-dict-entry-data drop2 literal eval-tokens-inner jump");
+
+  deffns(':', "create docol> return2");
 
   defop('input-flush', function(asm) {
     asm.call(0, VM.CPU.REGISTERS.CS).uint32('input_flush').
@@ -2645,6 +3181,20 @@ uint32('docode').
         uint32('return1');
   });
 
+  deffn('cell/', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell-size').
+        uint32('int-div').
+        uint32('return1');
+  });
+  
+  deffn('cell*', function(asm) {
+    asm.uint32('arg0').
+        uint32('cell-size').
+        uint32('int-mul').
+        uint32('return1');
+  });
+  
   deffn('cell+', function(asm) {
     asm.uint32('cell-size').
         uint32('arg0').
@@ -2720,7 +3270,129 @@ uint32('docode').
         uint32('pause').
         uint32('cont');
   });
+
+  deffns('digit-char',
+         "arg0 48 int-sub return1");
+  deffns('char-digit',
+         "arg0 48 int-add return1");
   
+  deffns('unsigned-number',
+         "zero\n" +
+         "arg0 seq-length swap\n" +
+         "cell+ swapdrop\n" +
+         "unsigned-number-loop:\n" +
+         "dup peek\n" +
+         "dup negative-sign equals literal unsigned-number-skip ifthenjump\n" +
+         "whitespace? literal unsigned-number-skip ifthenjump\n" +
+         "terminator? literal unsigned-number-done ifthenjump\n" +
+         "digit? not literal unsigned-number-error ifthenjump\n" +
+         "digit-char swapdrop\n" +
+         "local0 10 int-mul\n" +
+         "int-add\n" +
+         "store-local0\n" +
+         "unsigned-number-inc:\n" +
+         "cell+ swapdrop\n" +
+         "swap 1 int-sub swap\n" +
+         "literal unsigned-number-loop jump\n" +
+         "unsigned-number-skip: drop literal unsigned-number-inc jump\n" +
+         "unsigned-number-error: 0 0 return2\n" +
+         "unsigned-number-done: local0 true return2"
+        );
+
+  deffns('negate',
+         "0 arg0 int-sub return1");
+  
+  deffns('number',
+         "arg0 cell+ swapdrop peek negative-sign equals literal number-negative ifthenjump\n" +
+         "arg0 unsigned-number return2\n" +
+         "number-negative: arg0 unsigned-number swap negate swapdrop swap return2");
+
+  deffns('unsigned-int-to-string',
+         "arg0\n" +
+         "here cell-2 swapdrop\n" +
+         "unsigned-int-to-string-loop:\n" +
+         "local0 base int-mod char-digit swapdrop\n" +
+         "local0 base int-div dup store-local0 literal unsigned-int-to-string-loop ifthenjump\n" +
+         "here dup local1 swap int-sub cell/ swapdrop 1 int-add intern return1"
+        );
+
+  deffns('int-to-string',
+         "arg0\n" +
+         "true\n" +
+         "here cell-2 swapdrop\n" +
+         "arg0 0 < literal int-to-string-neg ifthenjump\n" +
+         "int-to-string-loop:\n" +
+         "local0 base int-mod char-digit swapdrop\n" +
+         "local0 base int-div dup store-local0 literal int-to-string-loop ifthenjump\n" +
+         "local1 literal int-to-string-pos ifthenjump\n" +
+         "negative-sign\n" +
+         "int-to-string-pos:\n" +
+         "here dup local2 swap int-sub cell/ swapdrop 1 int-add intern return1\n" +
+         "int-to-string-neg:\n" +
+         "local0 negate store-local0 drop\n" +
+         "false store-local1\n" +
+         "literal int-to-string-loop jump"
+        );
+
+  deffns('write-unsigned-int',
+         "arg0 unsigned-int-to-string write-string return0\n");
+  deffns('write-int',
+         "arg0 int-to-string write-string return0\n");
+
+  deffns('do', 'return-address jump'); // start a new frame for the loop
+  deffns('again', 'end-frame return-address jump'); // exit/return w/o ending frame
+  deffns('leave', 'end-frame end rotdrop2 jump'); // fixme needs to know where WHILE is
+  deffns('while',
+         'end drop\n' + // drop frame
+         'swap\n' + // swap return addr & condition
+         'literal while-loop ifthenjump\n' +
+         'end rotdrop2 jump\n' +
+         'while-loop: drop return-address jump');
+
+  deffns('seq-poke', // ( v seq n )
+         'arg2 arg1 arg0 cell+n rotdrop2 cell+ swapdrop\n' +
+         'poke\n' +
+         'return0');
+  deffns('seq-peek', // (seq n) todo bounds checking
+         'arg1 arg0 cell+n cell+ rotdrop2\n' +
+         'peek return1');
+  
+  deffns('seq0',
+         "arg1 arg0 2dup int-sub dallot\n" +
+         "do arg1 write-int arg0 arg1 seq-poke drop3\n" +
+         "write-ok write-crnl\n" +
+         "arg1 10 equals literal again ifthencall\n" +
+         "arg1 1 int-add set-arg1\n" +
+         "arg2 arg1 > while\n" +
+         "write-ok 1146048327 write-word drop\n" +
+         "local2 return1");
+
+  defop('pop-to', function(asm) {
+    asm.pop(VM.CPU.REGISTERS.SP).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
+  defop('stack-top', function(asm) {
+    asm.load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32('stack_top').
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+    //asm.uint32('literal').uint32('stack_top').uint32('return1');
+  });
+  deffn('*program-size*', function(asm) {
+    asm.uint32('literal').uint32('program-size').uint32('return1');
+  });
+  
+  var fs = require('fs');
+  asm.label('bootstrap-script').bytes(cellpad(fs.readFileSync(__dirname + '/forth_boot.4th', 'utf-8')));
+
+  deffns('fast-dict-script',
+         'literal fast-dict-script-src return1');
+  asm.label('fast-dict-script-src').bytes(cellpad(fs.readFileSync(__dirname + '/forth_fast_dict.4th', 'utf-8')));
+
+  deffns('assembler-script',
+         'literal assembler-script-src return1');
+  asm.label('assembler-script-src').bytes(cellpad(fs.readFileSync(__dirname + '/forth_assembler.4th', 'utf-8')));
+
   asm.label('program-size');
 
   asm.label('symbols-begin');
@@ -2729,6 +3401,15 @@ uint32('docode').
   asm.label('the-tokenizer-sym').label('*tokenizer*-sym').bytes(cellpad('*tokenizer*'));
   asm.label('*stop-tokenizing*-sym').bytes(cellpad('*stop-tokenizing*'));
   asm.label('helo-sym').bytes(cellpad("helo"));
+  asm.label('eos-sym').bytes(cellpad('EOS'));
+  asm.label('not-found-sym').bytes(cellpad('Not Found'));
+  asm.label('press-return-sym').bytes(cellpad('Press return...'));
+  asm.label('*debug*-sym').bytes(cellpad('*debug*'));
+  asm.label('*status*-sym').bytes(cellpad('*status*'));
+  asm.label('base-sym').bytes(cellpad('base'));
+  asm.label('TERMINATOR-sym').bytes(cellpad('TERMINATOR'));
+  asm.label('*state*-sym').bytes(cellpad('*state*'));
+  asm.label('negative-sign-sym').bytes(cellpad('negative-sign'));
   
   for(var n in ops) {
     var label = ops[n];
@@ -2780,24 +3461,38 @@ uint32('docode').
   // Variables
   last_label = dict_entry('*tokenizer*', 'variable-peeker-code', 0, last_label);
   last_label = dict_entry('*stop-tokenizing*', 'variable-peeker-code', 0, last_label);
+  last_label = dict_entry('*status*', 'variable-peeker-code', 0, last_label);
+  last_label = dict_entry('*debug*', 'variable-peeker-code', 0, last_label);
+  last_label = dict_entry('base', 'variable-peeker-code', 10, last_label);
+  last_label = dict_entry('TERMINATOR', 'variable-peeker-code', TERMINATOR, last_label);
+  last_label = dict_entry('*state*', 'variable-peeker-code', 0, last_label);
+  last_label = dict_entry('negative-sign', 'variable-peeker-code', 45, last_label);
 
   asm.label('dictionary-end');
   asm.label('dictionary').
       uint32(last_label);
   asm.label('dictionary-size').uint32(asm.resolve('dictionary-end') - asm.resolve('dictionary-begin'));
 
-  asm.label('toklit-sym').bytes(cellpad('lit'));
-  asm.label('toklit-code').
-      halt().
-      load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
-      
   asm.label('tok-write-sym').bytes(cellpad('.'));
-  asm.label('tok-e-lit-sym').bytes(cellpad('literal'));
+  asm.label('e-lit-sym').bytes(cellpad('lit'));
+  //asm.label("e-postpone-sym").bytes(cellpad("postpone"));
+  asm.label("e-'-sym").bytes(cellpad("'"));
+  asm.label("e-[']-sym").bytes(cellpad("[']"));
+  asm.label('e-"-sym').bytes(cellpad('"'));
+  asm.label('e-[-sym').bytes(cellpad('['));
+  asm.label('e-]-sym').bytes(cellpad(']'));
+  asm.label('e-endcol-sym').bytes(cellpad(';'));
       
   last_label = TERMINATOR;
-  last_label = dict_entry('toklit', 'toklit-code', 0, last_label);
   last_label = dict_entry('tok-write', 'call-data-code', 'write-line-ops', last_label);
-  last_label = dict_entry('tok-e-lit', 'call-data-code', 'e-lit-ops', last_label);
+  last_label = dict_entry('e-lit', 'call-data-code', 'c-lit-ops', last_label);
+  last_label = dict_entry("e-'", 'call-data-code', "c-'-ops", last_label);
+  last_label = dict_entry("e-[']", 'call-data-code', "'-ops", last_label);
+  last_label = dict_entry('e-"', 'call-data-code', 'c-"-ops', last_label);
+  //last_label = dict_entry("e-postpone", 'call-data-code', "postpone-ops", last_label);
+  last_label = dict_entry('e-[', 'call-data-code', '[-ops', last_label);
+  last_label = dict_entry('e-]', 'call-data-code', ']-ops', last_label);
+  last_label = dict_entry('e-endcol', 'call-data-code', 'endcol-ops', last_label);
   
   asm.label('immediate-dictionary').uint32(last_label);
   
