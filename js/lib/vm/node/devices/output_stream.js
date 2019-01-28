@@ -9,6 +9,7 @@ function OutputStream(stream, mem_size, vm, irq)
 {
   mem_size = mem_size || 1024;
 
+  this.name = "OutputStream";
   this.stream = stream;
   this.irq = irq;
   this.vm = vm;

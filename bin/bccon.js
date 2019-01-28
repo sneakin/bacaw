@@ -37,6 +37,11 @@ function vm_init(ram_size)
     var input = new InputStream(process.stdin, null, vm, input_irq);
     mmu.map_memory(input_addr, input.ram_size(), input);
 
+    var stderr_irq = VM.CPU.INTERRUPTS.user + 5;
+    var stderr_addr = 0xF0005000;
+    var stderr = new OutputStream(process.stderr, null, vm, stderr_irq);
+    mmu.map_memory(stderr_addr, stderr.ram_size(), stderr);
+
     var timer_addr = 0xF0002000;
     var timer_irq = VM.CPU.INTERRUPTS.user + 2;
     var timer = new Timer(vm, timer_irq, 1<<20);

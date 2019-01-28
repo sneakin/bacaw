@@ -9,6 +9,7 @@ function InputStream(stream, mem_size, vm, irq)
 {
   mem_size = mem_size || 1024;
 
+  this.name = "InputStream";
   this.vm = vm;
   this.stream = stream;
   this.irq = irq;
