@@ -35,6 +35,7 @@ literal endcol tailcall
 " EOS" lit eos constant drop2
 " Not Found" lit not-found constant drop2
 " Not Number" lit not-number constant drop2
+"  " lit space constant drop2
 
 ( Stop evaluation for an UNLESS or IF. )
 : THEN
@@ -282,11 +283,12 @@ literal endcol tailcall
 ;
 
 : char-digit-1
-  arg0 literal 10 >= IF
-    arg0 literal 10 int-sub
+  arg0 abs-int
+  local0 literal 10 >= IF
+    local0 literal 10 int-sub
     literal 65 int-add return1
   THEN
-  arg0 literal 48 int-add return1
+  local0 literal 48 int-add return1
 ;
 
 : digit-char-1
@@ -407,12 +409,26 @@ literal endcol tailcall
   true return1
 ;
 
+( Convert an unsigned integer value to a string. )
+: unsigned-int-to-string-1 ( number -- str-ptr )
+  arg0
+  here
+  DO
+    arg2 base uint-mod char-digit swapdrop
+    arg2 base uint-div dup set-arg2
+  WHILE
+  here dup local1 swap uint-sub cell/ swapdrop literal 4 uint-sub intern return1
+;
+
 :: char-digit literal char-digit-1 tailcall ;
 :: digit-char literal digit-char-1 tailcall ;
 :: unsigned-number literal unsigned-number-1 tailcall ;
+:: unsigned-int-to-string literal unsigned-int-to-string-1 tailcall ;
+
+: write-space space write-string ;
 
 : decompile-write-addr
-  arg0 write-unsigned-int "  " write-string write-crnl
+  arg0 write-unsigned-int write-space write-crnl
 ;
 
 : decompile-seq-by-addr
@@ -445,10 +461,10 @@ literal endcol tailcall
 
 : decompile-write-name
   arg0 dict-entry? IF
-    dict-entry-name write-string "  " write-string
+    dict-entry-name write-string write-space
     return0
   THEN
-  write-unsigned-int "  " write-string
+  write-unsigned-int write-space
   return0
 ;
 
@@ -480,6 +496,33 @@ literal endcol tailcall
 
   local0 return1
 ;
+
+: memdump-bytes ( ptr num-bytes )
+  arg0 UNLESS return0 THEN
+  arg1 peek write-unsigned-int write-space
+  drop
+  arg0 cell- swapdrop set-arg0
+  arg1 cell+ swapdrop set-arg1
+  RECURSE
+;
+
+: memdump-line ( start-ptr num-bytes )
+  arg1 write-unsigned-int write-tab
+  arg0 literal 32 min rotdrop2 memdump-bytes
+  write-crnl
+;
+
+: memdump ( start-ptr num-bytes )
+  arg0 UNLESS return0 THEN
+  arg1 arg0 literal 32 min rotdrop2 memdump-line ( arg1 bytes-to-dump )
+  arg0 dup1 int-sub set-arg0
+  int-add set-arg1
+  RECURSE
+;
+
+: binary literal %10 lit base set-var ;
+: hex literal $10 lit base set-var ;
+: dec literal #10 lit base set-var ;
 
 ( Actually prompt! )
 terminator

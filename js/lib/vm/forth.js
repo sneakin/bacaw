@@ -881,7 +881,17 @@ Forth.assembler = function(ds, cs, info) {
                    subi: 'int-sub',
                    muli: 'int-mul',
                    divi: 'int-div',
-                   modi: 'int-mod'
+                   modi: 'int-mod',
+                   addu: 'uint-add',
+                   subu: 'uint-sub',
+                   mulu: 'uint-mul',
+                   divu: 'uint-div',
+                   modu: 'uint-mod',
+                   addf: 'float-add',
+                   subf: 'float-sub',
+                   mulf: 'float-mul',
+                   divf: 'float-div',
+                   modf: 'float-mod'
                  }
   for(var k in math_ops) {
     var op = k;
@@ -1138,7 +1148,7 @@ Forth.assembler = function(ds, cs, info) {
         store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
-  
+
   defop('dpop', function(asm) {
     asm.
         load(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
@@ -1150,6 +1160,30 @@ Forth.assembler = function(ds, cs, info) {
   defop('ddrop', function(asm) {
     asm.
         dec(HEAP_REG).uint32(4).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
+  defop('dpush-short', function(asm) {
+    asm.
+        pop(VM.CPU.REGISTERS.R0).
+        inc(HEAP_REG).uint32(2).
+        store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
+  defop('dpop-short', function(asm) {
+    asm.
+        load(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
+        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0xFFFF).
+        and(VM.CPU.REGISTERS.R1).
+        dec(HEAP_REG).uint32(2).
+        push(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
+  defop('ddrop-short', function(asm) {
+    asm.
+        dec(HEAP_REG).uint32(2).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
 
@@ -3274,7 +3308,7 @@ uint32('docode').
   deffns('digit-char',
          "arg0 48 int-sub return1");
   deffns('char-digit',
-         "arg0 48 int-add return1");
+         "arg0 abs-int 48 int-add return1");
   
   deffns('unsigned-number',
          "zero\n" +
@@ -3307,13 +3341,18 @@ uint32('docode').
          "arg0 unsigned-number return2\n" +
          "number-negative: arg0 unsigned-number swap negate swapdrop swap return2");
 
+  deffns('abs-int',
+         "arg0 0 > literal abs-int-done ifthenjump\n" +
+         "abs-int-negate: arg0 negate set-arg0\n" +
+         "abs-int-done: return0");
+  
   deffns('unsigned-int-to-string',
          "arg0\n" +
-         "here cell-2 swapdrop\n" +
+         "here\n" +
          "unsigned-int-to-string-loop:\n" +
-         "local0 base int-mod char-digit swapdrop\n" +
-         "local0 base int-div dup store-local0 literal unsigned-int-to-string-loop ifthenjump\n" +
-         "here dup local1 swap int-sub cell/ swapdrop 1 int-add intern return1"
+         "local0 base uint-mod char-digit swapdrop\n" +
+         "local0 base uint-div dup store-local0 literal unsigned-int-to-string-loop ifthenjump\n" +
+         "here dup local1 swap uint-sub cell/ swapdrop 1 uint-sub intern return1"
         );
 
   deffns('int-to-string',
