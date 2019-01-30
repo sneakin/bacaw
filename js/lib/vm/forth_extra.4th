@@ -499,7 +499,7 @@ literal endcol tailcall
 
 : memdump-bytes ( ptr num-bytes )
   arg0 UNLESS return0 THEN
-  arg1 peek write-unsigned-int write-space
+  arg1 peek write-unsigned-int write-tab
   drop
   arg0 cell- swapdrop set-arg0
   arg1 cell+ swapdrop set-arg1
@@ -507,7 +507,7 @@ literal endcol tailcall
 ;
 
 : memdump-line ( start-ptr num-bytes )
-  arg1 write-unsigned-int write-tab
+  arg1 write-unsigned-int write-space
   arg0 literal 32 min rotdrop2 memdump-bytes
   write-crnl
 ;
