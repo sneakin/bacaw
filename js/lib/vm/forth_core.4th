@@ -1178,43 +1178,42 @@
   arg1 write-line wait-return
   arg0 literal *status*-sym set-var
   literal 0 literal *state*-sym set-var drop3
-  end return0 ( exit caller )
+  quit ( exit caller )
 ;
 
 ( fixme a frame not linking to it's parent as the parent's link gets overwritten by data )
+
+: if-test
+  arg0 IF write-ok return0 THEN
+  write-err return0
+;
+
+( Compile a token or try converting to a number if that fails. )
+: compile ( tok -- lookup executable? )
+  arg0
+  *state* IF
+    immediate-lookup dup IF literal 1 return2 THEN
+    drop
+  THEN
+  
+  dict dict-lookup dup IF *state* not return2 THEN
+  drop2 number IF literal 0 return2 THEN
+
+  drop literal not-found-sym error
+  literal 0 literal 0 return2
+;
+
+: next-word
+  *tokenizer* next-token return2
+;
+
 : eval-tokens
   ( str )
-  eval-tokens-inner:
-  *tokenizer* next-token  ( tokenizer token length )
-  rotdrop swap ( token length )
-  not literal eval-tokens-done ifthenjump
+  next-word UNLESS drop literal eval-loop jump-entry-data THEN
   ( compile lookup )
-  *state* not literal eval-tokens-lookup ifthenjump
-  immediate-lookup dup not literal eval-tokens-compile-lookup ifthenjump
-  swapdrop exec
-  literal eval-tokens-inner jump
-  eval-tokens-compile-lookup: drop
-  ( lookup )
-  eval-tokens-lookup:
-  dict dict-lookup swapdrop ( token lookup )
-  dup not literal eval-tokens-not-found ifthenjump
-  ( exec )
-  swapdrop *state* literal eval-tokens-inner ifthenjump ( lookup )
-  exec
-  literal eval-tokens-inner jump
-  ( try converting to a number )
-  eval-tokens-not-found: ( token lookup )
-  drop ( token )
-  number not literal eval-tokens-not-number ifthenjump
-  swapdrop
-  eval-tokens-skip-postpone:
-  literal eval-tokens-inner jump
-  ( error )
-  eval-tokens-not-number:
-  drop literal not-found-sym error
-  literal eval-loop-loop jump
-  ( "return" )
-  eval-tokens-done: drop literal eval-loop-loop jump
+  compile IF swapdrop exec RECURSE THEN
+  swapdrop RECURSE
+  ( literal eval-loop tailcall )
 ;
 
 : make-the-tokenizer
@@ -1236,13 +1235,12 @@
 ;
 
 : eval-loop
-  eval-loop-loop:
-  write-status write-int write-tab dim write-depth color-reset prompt flush-read-line
+  write-status write-int write-tab dim write-depth
+  color-reset prompt
+  flush-read-line
   blue write-string color-reset
   make-the-tokenizer drop2
-  literal eval-tokens-ops jump
-  literal eval-loop-loop jump
-  return0
+  literal eval-tokens jump-entry-data
 ;
 
 : unset-tokenizer-stop-flag
@@ -1309,9 +1307,7 @@
 ;
 
 : pause2
-  *debug* not literal pause2-done ifthenjump
-  wait-return
-  pause2-done: return0
+  *debug* IF wait-return THEN
 ;
   
 : docol>
@@ -1325,7 +1321,7 @@
   literal return0
   ]
   swap set-dict-entry-data drop2
-  literal eval-tokens-inner jump
+  literal eval-tokens jump-entry-data
 ; immediate-as ;
 
 : :
@@ -1398,6 +1394,11 @@
 
 : cell-2
   arg0 literal -2 cell+n
+  return1
+;
+
+: cell-3
+  arg0 literal -3 cell+n
   return1
 ;
 

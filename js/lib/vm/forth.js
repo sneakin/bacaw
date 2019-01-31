@@ -97,6 +97,7 @@ function opcodes(asm, def) {
   });
 }
 
+var stack = [];
 var dictionary = {
 };
 var immediates = {
@@ -110,6 +111,12 @@ function unslash(str)
       replace(/\\r/g, "\r").
       replace(/\\t/g, "\t")
       ;
+}
+
+function genlabel(prefix)
+{
+  if(prefix == null) prefix = 'gen';
+  return `${prefix}-${Math.random()}`;
 }
 
 var macros = {
@@ -163,6 +170,32 @@ var macros = {
     var name = last_dictionary;
     immediates[name] = dictionary[name];
     dictionary[name] = dictionary[name].prior;
+  },
+  IF: function(asm, tokens, index) {
+    var jump_label = genlabel(last_dictionary);
+    stack.push(jump_label);
+    
+    asm.uint32('not').
+        uint32('literal').
+        uint32(jump_label).
+        uint32('ifthenjump');
+  },
+  UNLESS: function(asm, tokens, index) {
+    var jump_label = genlabel(last_dictionary);
+    stack.push(jump_label);
+    
+    asm.uint32('literal').
+        uint32(jump_label).
+        uint32('ifthenjump');
+  },
+  THEN: function(asm, tokens, index) {
+    // fix the IF to jump here
+    var label = stack.pop();
+    console.log("THEN", label);
+    asm.label(label);
+  },
+  RECURSE: function(asm, tokens, index) {
+    asm.uint32('literal').uint32(last_dictionary).uint32('jump-entry-data');
   }
 };
 
@@ -577,7 +610,8 @@ Forth.assembler = function(ds, cs, info) {
   });
 
   defop('jump-entry-data', function(asm) {
-    asm.load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
+    asm.pop(VM.CPU.REGISTERS.R0).
+        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
         inc(EVAL_IP_REG).uint32(4).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
         ret();
@@ -600,6 +634,8 @@ Forth.assembler = function(ds, cs, info) {
         ret();
   });
 
+  // todo need an abort to eval-loop: catch/throw?
+  
   // actually return from call
   defop('quit', function(asm) {
     asm.
@@ -614,7 +650,7 @@ Forth.assembler = function(ds, cs, info) {
         label('quit-done').
         // move SP
         mov(VM.CPU.REGISTERS.SP, FP_REG).
-        inc(VM.CPU.REGISTERS.SP).uint32(FRAME_SIZE).
+        inc(VM.CPU.REGISTERS.SP).uint32(FRAME_SIZE + 4).
         ret();
   });
 
@@ -772,16 +808,21 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
 
+  // fixme to tailcall, call-data* needs to not create the frame
+  // or detect if an op is called or not and jump w/ IP or EIP
+  
   defop('tailcall', function(asm) {
     asm.
         // save where to call
-        pop(VM.CPU.REGISTERS.R0).
+        //pop(VM.CPU.REGISTERS.R0).
         // pop frame
-        mov(VM.CPU.REGISTERS.SP, FP_REG).
-        pop(FP_REG).
-        pop(EVAL_IP_REG).
+        //mov(VM.CPU.REGISTERS.SP, FP_REG).
+        //load(EVAL_IP_REG, 0, FP_REG).uint32(4).
+        load(FP_REG, 0, FP_REG).uint32(0).
+        //pop(FP_REG).
+        //pop(EVAL_IP_REG).
         // place to call
-        push(VM.CPU.REGISTERS.R0).
+        //push(VM.CPU.REGISTERS.R0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('exec-code');
   });
   
@@ -837,7 +878,7 @@ Forth.assembler = function(ds, cs, info) {
         pop(VM.CPU.REGISTERS.R0).
         //pop(VM.CPU.REGISTERS.R1).
         // pop frame
-        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        //mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
         // call's argument
@@ -1474,7 +1515,7 @@ Forth.assembler = function(ds, cs, info) {
   var tok = tokenize(forth_sources.core);
   interp(asm, tok);
 
-  //tok = tokenizer(forth_sources.extra);
+  //tok = tokenize(forth_sources.extra);
   //interp(asm, tok);
 
   asm.label('*program-size*');

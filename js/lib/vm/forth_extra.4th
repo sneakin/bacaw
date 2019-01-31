@@ -17,7 +17,7 @@ write-crnl
 ( Make ; print the new entry's name and OK. )
 : ;
 dict dict-entry-name write-string drop2 write-ok
-literal endcol tailcall
+literal endcol jump-entry-data
 ; immediate-only
 
 ( Print the top of stack. )
@@ -43,17 +43,6 @@ literal endcol tailcall
   2dup swap int-sub
   swap poke
 ; immediate-only
-
-( Look a token up using compilation semantics: check for immediates if *state* is set for compilation. )
-: compile-lookup
-  *state* not UNLESS
-    arg0 immediate-lookup dup not UNLESS return1 THEN
-    drop
-  THEN
-
-  arg0 dict dict-lookup swapdrop dup not UNLESS return1 THEN
-  return1
-;
 
 ( Read the next token and look it up in immediate and regular dictionaries. )
 : POSTPONE
@@ -118,7 +107,7 @@ literal endcol tailcall
 : RECURSE
   literal literal
   dict
-  literal tailcall
+  literal jump-entry-data
   return-locals
 ; immediate
 
@@ -189,11 +178,12 @@ literal endcol tailcall
   return-locals
 ; immediate-only
 
-( Compile a token or try converting to a number if that fails. )
-: compile
-  arg0 compile-lookup dup not UNLESS return1 THEN
-  drop number UNLESS drop return1 THEN
-  return1
+( Redefine or create the next word as a colon definition. )
+: ::
+  *tokenizer* next-token
+  dup UNLESS eos eos error return0 THEN
+  dup1 dict dict-lookup dup UNLESS drop3 intern-seq literal 0 literal 0 add-dict THEN
+  docol> return2
 ;
 
 : backtick?
@@ -206,7 +196,7 @@ literal endcol tailcall
     *tokenizer* next-token UNLESS drop2 LEAVE THEN
     swapdrop ( token )
     backtick? IF drop LEAVE THEN
-    compile ( token addr )
+    compile drop ( token addr )
     literal literal ( token addr lit )
     rot ( lit addr token )
   backtick? swapdrop UNTIL
@@ -274,18 +264,15 @@ literal endcol tailcall
   local2 return1
 ;
 
-( Redefine or create the next word as a colon definition. )
-: ::
-  *tokenizer* next-token
-  dup UNLESS eos eos error return0 THEN
-  dup1 dict dict-lookup dup UNLESS drop3 intern-seq literal 0 literal 0 add-dict THEN
-  docol> return2
-;
-
 : char-digit-1
   arg0 abs-int
   local0 literal 10 >= IF
     local0 literal 10 int-sub
+    dup literal 26 >= IF
+      literal 26 int-sub
+      literal 97 int-add
+      return1
+    THEN
     literal 65 int-add return1
   THEN
   local0 literal 48 int-add return1
@@ -300,6 +287,7 @@ literal endcol tailcall
   arg0 lower-alpha? IF
     literal 97 int-sub
     literal 10 int-add
+    base 36 >= IF literal 26 int-add THEN
     return1
   THEN
   arg0 digit? IF
@@ -420,10 +408,11 @@ literal endcol tailcall
   here dup local1 swap uint-sub cell/ swapdrop literal 4 uint-sub intern return1
 ;
 
-:: char-digit literal char-digit-1 tailcall ;
-:: digit-char literal digit-char-1 tailcall ;
-:: unsigned-number literal unsigned-number-1 tailcall ;
-:: unsigned-int-to-string literal unsigned-int-to-string-1 tailcall ;
+( Patch the bootstrap functions. )
+:: char-digit literal char-digit-1 jump-entry-data ;
+:: digit-char literal digit-char-1 jump-entry-data ;
+:: unsigned-number literal unsigned-number-1 jump-entry-data ;
+:: unsigned-int-to-string literal unsigned-int-to-string-1 jump-entry-data ;
 
 : write-space space write-string ;
 
@@ -499,7 +488,7 @@ literal endcol tailcall
 
 : memdump-bytes ( ptr num-bytes )
   arg0 UNLESS return0 THEN
-  arg1 peek write-unsigned-int write-tab
+  arg1 peek write-unsigned-int write-space
   drop
   arg0 cell- swapdrop set-arg0
   arg1 cell+ swapdrop set-arg1
@@ -507,7 +496,7 @@ literal endcol tailcall
 ;
 
 : memdump-line ( start-ptr num-bytes )
-  arg1 write-unsigned-int write-space
+  arg1 write-unsigned-int write-tab
   arg0 literal 32 min rotdrop2 memdump-bytes
   write-crnl
 ;
