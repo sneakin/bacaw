@@ -1188,19 +1188,19 @@
   write-err return0
 ;
 
-( Compile a token or try converting to a number if that fails. )
-: compile ( tok -- lookup executable? )
-  arg0
-  *state* IF
-    immediate-lookup dup IF literal 1 return2 THEN
-    drop
-  THEN
-  
-  dict dict-lookup dup IF *state* not return2 THEN
+( Look a token up or try converting to a number. )
+: interp ( token ++ value executable? )
+  arg0 dict dict-lookup dup IF *state* not return2 THEN
   drop2 number IF literal 0 return2 THEN
 
   drop literal not-found-sym error
   literal 0 literal 0 return2
+;
+
+: compile ( tok -- lookup executable? )
+  arg0 immediate-lookup dup IF literal 1 return2 THEN
+  drop
+  interp return2
 ;
 
 : next-word
@@ -1210,8 +1210,11 @@
 : eval-tokens
   ( str )
   next-word UNLESS drop literal eval-loop jump-entry-data THEN
-  ( compile lookup )
-  compile IF swapdrop exec RECURSE THEN
+( compile lookup )
+  *state* UNLESS interp THEN
+  *state* IF compile THEN
+
+  IF swapdrop exec RECURSE THEN
   swapdrop RECURSE
   ( literal eval-loop tailcall )
 ;

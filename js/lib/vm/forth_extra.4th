@@ -47,13 +47,10 @@ literal endcol jump-entry-data
 ( Read the next token and look it up in immediate and regular dictionaries. )
 : POSTPONE
   *tokenizer* next-token UNLESS literal eos eos error return0 THEN
-  immediate-lookup dup UNLESS
-    drop
-    dict dict-lookup dup UNLESS
-      drop2 not-found error return0
-    THEN
-  THEN
-  return1
+  compile not UNLESS swapdrop return1 THEN
+  swapdrop
+  literal literal swap
+  return2
 ; immediate
 
 ( Causes the caller to return all of its local data shifted over the frame and return pointers. )
