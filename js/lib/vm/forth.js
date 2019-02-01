@@ -55,10 +55,39 @@ function cellpad(str)
   return arr;
 }
 
+var strings = {};
+
 function tokenize(def) {
-  return def.
-      split(/[(].*[)]/).join('').
-      split(/\s+/);
+  return def.match(/([(][^)]+[)])|([^ \n\r\t]+)|([^ ]*"[^"]*")/g).
+      filter((t) => t[0] != '(').
+      map(function(t) {
+        if(t == '"' || t.indexOf('"') == -1) return t;
+        var parts = t.split('"');
+
+        if(parts.length > 1) {
+          var label = genlabel('string');
+          strings[label] = parts[1];
+          if(parts[0].length > 0) {
+            return [ parts[0], label ];
+          } else {
+            return label;
+          }
+        }
+        return parts[0];
+      }).flat();
+}
+
+function next_token(str)
+{
+  var sp = str.match(/\s*([^ \t\n\r]+)/)
+    
+  if(sp) {
+    return [ sp[1], str.slice(sp[0].length) ];
+  } else if(str.match(/\s*/)) {
+    return false;
+  } else {
+    throw "Parse error";
+  }
 }
 
 const base_chars = {
@@ -117,12 +146,15 @@ function unslash(str)
 function genlabel(prefix)
 {
   if(prefix == null) prefix = 'gen';
-  return `${prefix}-${Math.random()}`;
+  var n = Math.floor(1.0e9 * Math.random());
+  return `${prefix}-${n}`;
 }
 
 var macros = {
-  ":": function(asm, tokens, index) {
-    var name = tokens[index + 1];
+  ":": function(asm, token, code) {
+    var tok = next_token(code);
+    var name = tok[0];
+    
     last_dictionary = name;
     dictionary[name] = {
       code: 'call-data-seq-code',
@@ -135,9 +167,9 @@ var macros = {
         uint32(name + '-end', true).
         label(name + '-ops');
     
-    return 1;
+    return tok[1];
   },
-  ";": function(asm, tokens, index) {
+  ";": function(asm, token, code) {
     var name = last_dictionary;
     dictionary[name].data = name + '-entry-data';
     
@@ -146,33 +178,37 @@ var macros = {
         label(name + '-size', (asm.resolve(name + '-end') - asm.resolve(name + '-ops')) / 4).
         uint32(TERMINATOR);
   },
-  longify: function(asm, tokens, index) {
-    var v = unslash(tokens[index + 1]);
+  longify: function(asm, token, code) {
+    var tok = next_token(code);
+    var v = unslash(tok[0]);
     var l = longify(v);
     asm.uint32(l);
-    return 1;
+    return tok[1];
   },
-  "char-code": function(asm, tokens, index) {
-    var v = unslash(tokens[index + 1]);
+  "char-code": function(asm, token, code) {
+    var tok = next_token(code);
+    var v = unslash(tok[0]);
     asm.uint32(v.charCodeAt(0));
-    return 1;
+    return tok[1];
   },
-  immediate: function(asm, tokens, index) {
+  immediate: function(asm, token, code) {
     var name = last_dictionary;
     immediates[name] = dictionary[name];
   },
-  "immediate-as": function(asm, tokens, index) {
+  "immediate-as": function(asm, token, code) {
     var name = last_dictionary;
-    var im_name = tokens[index + 1];
+    var tok = next_token(code);
+    var im_name = tok[0]
     immediates[im_name] = dictionary[name];
-    return 1;
+    return tok[1];
   },
-  "immediate-only": function(asm, tokens, index) {
+  "immediate-only": function(asm, token, code) {
     var name = last_dictionary;
     immediates[name] = dictionary[name];
+    immediates[name].only = true;
     dictionary[name] = dictionary[name].prior;
   },
-  IF: function(asm, tokens, index) {
+  IF: function(asm, token, code) {
     var jump_label = genlabel(last_dictionary);
     stack.push(jump_label);
     
@@ -181,7 +217,7 @@ var macros = {
         uint32(jump_label).
         uint32('ifthenjump');
   },
-  UNLESS: function(asm, tokens, index) {
+  UNLESS: function(asm, token, code) {
     var jump_label = genlabel(last_dictionary);
     stack.push(jump_label);
     
@@ -189,33 +225,70 @@ var macros = {
         uint32(jump_label).
         uint32('ifthenjump');
   },
-  THEN: function(asm, tokens, index) {
+  THEN: function(asm, token, code) {
     // fix the IF to jump here
     var label = stack.pop();
-    console.log("THEN", label);
     asm.label(label);
   },
-  RECURSE: function(asm, tokens, index) {
+  RECURSE: function(asm, token, code) {
     asm.uint32('literal').uint32(last_dictionary).uint32('jump-entry-data');
+  },
+  POSTPONE: function(asm, token, code) {
+    var tok = next_token(code);
+    asm.uint32(tok[0]);
+    return tok[1];
+  },
+  '"': function(asm, token, code) {
+    var m = code.indexOf('"');
+    if(m) {
+      var label = genlabel('string');
+      strings[label] = code.slice(1, m);
+
+      asm.uint32('literal').uint32(label);
+
+      return code.slice(m + 1);
+    } else {
+      return "parse error: unterminated string";
+    }
+  },
+  lit: function(asm, token, code) {
+    var tok = next_token(code);
+    var label = genlabel('string');
+    strings[label] = tok[0];
+    asm.uint32('literal').uint32(label);
+    return tok[1];
+  },
+  "(": function(asm, token, code) {
+    var m = code.indexOf(')');
+    if(m) {
+      return code.slice(m + 1);
+    } else {
+      throw "parse error";
+    }
   }
 };
 
-function execute(asm, tokens, index)
+function execute(asm, token, code)
 {
-  var token = tokens[index];
   var func = macros[token];
   if(func) {
-    return func(asm, tokens, index);
+    return func(asm, token, code);
   } else if(token) {
     compile(asm, token);
   }
 }
 
-function interp(asm, tokens)
+function interp(asm, str)
 {
-  for(var i = 0; i < tokens.length; i++) {
-    var r = execute(asm, tokens, i);
-    if(r != null) i += r;
+  var s = str;
+  
+  for(var s = str; s.length > 0;) {
+    var t = next_token(s);
+    if(t == false) break;
+    
+    s = t[1];
+    var r = execute(asm, t[0], s);
+    if(r != null) s = r;
   }
   
   return asm;
@@ -1516,11 +1589,12 @@ Forth.assembler = function(ds, cs, info) {
     //asm.uint32('literal').uint32('stack_top').uint32('return1');
   });
   
-  var tok = tokenize(forth_sources.core);
-  interp(asm, tok);
+  //var tok = tokenize(forth_sources.core);
+  interp(asm, forth_sources.core);
 
   //tok = tokenize(forth_sources.extra);
-  //interp(asm, tok);
+  interp(asm, forth_sources.extra);
+  interp(asm, forth_sources.assembler);
 
   asm.label('*program-size*');
 
@@ -1559,6 +1633,10 @@ Forth.assembler = function(ds, cs, info) {
   asm.label('TERMINATOR-sym').bytes(cellpad('TERMINATOR'));
   asm.label('*state*-sym').bytes(cellpad('*state*'));
   asm.label('negative-sign-sym').bytes(cellpad('negative-sign'));
+
+  for(var n in strings) {
+    asm.label(n).bytes(cellpad(strings[n]));
+  }
   
   for(var n in ops) {
     var label = ops[n];
@@ -1645,7 +1723,11 @@ Forth.assembler = function(ds, cs, info) {
   for(var n in immediates) {
     var entry = immediates[n];
     if(entry == null) continue;
-    last_label = dict_entry("e-" + n, n + '-sym', entry.code, entry.data, last_label);
+    label = n;
+    if(entry.only != true) {
+      label = "e-" + n;
+    }
+    last_label = dict_entry(label, n + '-sym', entry.code, entry.data, last_label);
   }
   last_label = dict_entry('tok-write', 'tok-write-sym', 'call-data-seq-code', 'write-line-ops', last_label);
   //last_label = dict_entry('e-lit', 'call-data-code', 'c-lit-ops', last_label);
