@@ -14,7 +14,8 @@ const forth_sources = {
   core: fs.readFileSync(__dirname + '/forth_core.4th', 'utf-8'),
   extra: fs.readFileSync(__dirname + '/forth_extra.4th', 'utf-8'),
   fast_dict: fs.readFileSync(__dirname + '/forth_fast_dict.4th', 'utf-8'),
-  assembler: fs.readFileSync(__dirname + '/forth_assembler.4th', 'utf-8')
+  assembler: fs.readFileSync(__dirname + '/forth_assembler.4th', 'utf-8'),
+  ops: fs.readFileSync(__dirname + '/forth_ops.4th', 'utf-8')
 };
 
 function Forth()
@@ -1333,6 +1334,9 @@ Forth.assembler = function(ds, cs, info) {
   defop('dpush-short', function(asm) {
     asm.
         pop(VM.CPU.REGISTERS.R0).
+        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(16).
+        cls(VM.CPU.STATUS.NUMERICS).
+        bsl(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
         inc(HEAP_REG).uint32(2).
         store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');

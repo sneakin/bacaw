@@ -1155,12 +1155,12 @@
   
 : "
   *tokenizer* literal 34 tokenizer-read-until intern-seq return1
-;
+; immediate
 
 : c-"
-  literal literal " return2
+  literal literal POSTPONE " return2
 ; immediate-as "
-  
+
 : wait-return
   literal press-return-sym
   write-string flush-read-line

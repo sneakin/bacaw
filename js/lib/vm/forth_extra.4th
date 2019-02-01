@@ -32,10 +32,16 @@ literal endcol jump-entry-data
       literal 3 returnN
 ; immediate-only
 
+(
 " EOS" lit eos constant drop2
 " Not Found" lit not-found constant drop2
 " Not Number" lit not-number constant drop2
 "  " lit space constant drop2
+)
+: eos " EOS" return1 ;
+: not-found " Not Found" return1 ;
+: not-number  " Not Number" return1 ;
+: space "  " return1 ;
 
 ( Stop evaluation for an UNLESS or IF. )
 : THEN
@@ -261,6 +267,7 @@ literal endcol jump-entry-data
   local2 return1
 ;
 
+( Convert a single digit to an ASCII digit or letter. )
 : char-digit-1
   arg0 abs-int
   local0 literal 10 >= IF
@@ -275,6 +282,7 @@ literal endcol jump-entry-data
   local0 literal 48 int-add return1
 ;
 
+( Convert an ASCII character to a digit. )
 : digit-char-1
   arg0 upper-alpha? IF
     literal 65 int-sub

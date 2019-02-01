@@ -1,54 +1,68 @@
 : make-short ( nibbles... )
-  arg3 literal 12 bsl
-  arg2 literal 8 bsl
-  logior
-  arg1 literal 4 bsl
-  logior
-  arg0
-  logior
+  arg3 literal 4 bsl
+  arg2 logior
+  literal 4 bsl
+  arg1 logior
+  literal 4 bsl
+  arg0 logior
   return1
 ;
 
+(
+: a-def-op
+  : POSTPONE arg2
+    POSTPONE arg1
+    POSTPONE arg0
+    arg0
+    POSTPONE make-short
+    POSTPONE return1
+    POSTPONE ;
+;
+)
+
+( cmpi dec cls rti sleep halt call ret sie cie and or addi subi muli divi modi  )
+( inc load store push pop)
+
+(
+literal 14 a-def-op a-push
+literal 6 a-def-op a-pop
+literal 5 a-def-op a-load
+literal 13 a-def-op a-store
+literal 1 a-def-op a-inc
+literal 9 a-def-op a-dec
+)
+
 : a-push
-  literal 0 literal 0 arg0 literal 14 make-short
-  dpush-short
+  literal 0 literal 0 arg0 literal 14 make-short return1
 ;
 
 : a-pop
-  literal 0 literal 0 arg0 literal 6 make-short
-  dpush-short
+  literal 0 literal 0 arg0 literal 6 make-short return1
 ;
 
 : a-load
-  arg2 arg1 arg0 literal 5 make-short
-  dpush-short
+  arg2 arg1 arg0 literal 5 make-short return1
 ;
 
 : a-store
-  arg2 arg1 arg0 literal 13 make-short
-  dpush-short
+  arg2 arg1 arg0 literal 13 make-short return1
 ;
 
 : a-inc
-  arg3 arg2 arg1 literal 1 make-short
-  dpush-short
+  arg2 arg1 arg0 literal 1 make-short return1
 ;
 
 : asm[
   literal start-seq
+  return1
 ; immediate
 
 : ]asm
+  literal local0
   literal end-seq
+  return2
 ; immediate
 
-(
-literal 9 lit ds-reg constant
-ds-reg literal 1 int-sub lit heap-reg constant
-heap-reg literal 1 int-sub lit eval-ip constant
-)
-
-: eval-ip literal 7 return1 ;
 : a-ins literal 15 return1 ;
 : a-status literal 14 return1 ;
 : a-isr literal 13 return1 ;
@@ -57,13 +71,3 @@ heap-reg literal 1 int-sub lit eval-ip constant
 : a-cs literal 10 return1 ;
 : a-ds literal 9 return1 ;
 
-: next-1
-  asm[
-    eval-ip literal 0 literal 0 a-load literal 0 dpush
-    eval-ip a-inc literal 4 dpush
-    literal 0 literal 0 a-ip a-load literal 4 dpush
-  ]asm
-  local0 return1
-;
-
-( cmpi inc dec cls rti sleep halt call ret sie cie and or addi subi muli divi modi )
