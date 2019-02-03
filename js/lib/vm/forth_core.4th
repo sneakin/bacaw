@@ -218,8 +218,9 @@
 
   dict-each-loop:
   local0 terminator? literal dict-each-done ifthenjump 
+  drop
   arg1 exec 
-  local0 dict-entry-next store-local0 drop 
+  local0 dict-entry-next store-local0 drop
   literal dict-each-loop jump
 
   dict-each-done: return0
@@ -465,6 +466,10 @@
 
   null-yes:
   literal 1 return1
+;
+
+: terminator
+  literal S-TERMINATOR return1
 ;
 
 : terminator?
@@ -1058,15 +1063,21 @@
   swapdrop add-dict
 ;
 
-: dovar
-  ( entry )
-  literal variable-peeker-code arg0 set-dict-entry-code
+: does-var
+  ( entry init-value )
+  literal variable-peeker-code arg1 set-dict-entry-code
+  arg0 arg1 set-dict-entry-data
 ;
 
-: defvar
+: [variable]
   ( value name )
-  arg0 literal variable-peeker-code arg1 add-dict
-  return1
+  arg0 [create] arg1 does-var
+  drop return1
+;
+
+: variable
+  ( value : name )
+  create arg0 does-var
 ;
 
 : set-var
@@ -1080,7 +1091,7 @@
   literal variable-peeker-code swap set-dict-entry-code
   return1
   ( else set data )
-  set-not-found: arg1 arg0 defvar
+  set-not-found: arg1 arg0 [variable]
   return1
 ;
 
@@ -1125,34 +1136,38 @@
   arg0 dict-entry-data
   arg1 swap poke
 ;
-  
+
+( Read and intern the next token. )
 : lit
   *tokenizer* next-token dup not literal lit-no-token ifthenjump
   intern-seq return1
   lit-no-token: literal eos-sym error return0
 ;
 
+( A postponed LIT. )
 : c-lit
   literal literal lit return2
 ; immediate-as lit
 
+( Read the next token and look it up in the dictionary. )
 : '
   *tokenizer* next-token not literal '-no-token ifthenjump
   dict dict-lookup return1
   '-no-token: literal eos-sym error return0
 ;
 
-: c-'
-  literal literal ' lit return2
-; immediate-as '
-
+( Actually emit ' when ' is redefined to emit LITERAL. )
 : [']
-  literal ' tailcall
+  literal ' return1
 ; immediate-only
 
+( No need to perform a double lookup since compilation does that. )
+: c-'
+  literal literal return1
+; immediate-as '
 
 ( fixme: need to read strings larger than the tokenizer's buffer )
-  
+
 : "
   *tokenizer* literal 34 tokenizer-read-until intern-seq return1
 ; immediate
@@ -1208,12 +1223,12 @@
 ;
 
 : eval-tokens
-  ( str )
+  ( ++ str )
   next-word UNLESS drop literal eval-loop jump-entry-data THEN
-( compile lookup )
+  ( compile lookup )
   *state* UNLESS interp THEN
   *state* IF compile THEN
-
+  ( exec? )
   IF swapdrop exec RECURSE THEN
   swapdrop RECURSE
   ( literal eval-loop tailcall )
@@ -1226,7 +1241,9 @@
 ;
 
 : eval-string
-  arg0 make-the-tokenizer eval-tokens
+  end drop2 ( not coming back! )
+  ( arg0 ) make-the-tokenizer drop2
+  literal eval-tokens jump-entry-data
 ;
 
 : stack-depth
@@ -1277,7 +1294,7 @@
 ;
 
 : stack-find
-  ( needle )
+  ( start-location needle ++ ptr )
   arg1
   stack-find-loop:
   local0 peek arg0 equals literal stack-find-done ifthenjump
@@ -1298,12 +1315,15 @@
   seq-length literal 1 int-add return1-n
 ; immediate
   
-: create
-  *tokenizer* next-token
-  dup not literal create-fail ifthenjump
-  intern-seq
+: [create]
+  arg1 arg0 intern-seq
   literal 0 literal 0 add-dict
   return1
+;
+
+: create
+  *tokenizer* next-token dup not literal create-fail ifthenjump
+  [create] return1
 
   create-fail:
   literal eos-sym error
@@ -1330,7 +1350,7 @@
 : :
   create docol> return2
 ;
-    
+
 : flush-read-line
   input-reset read-line input-reset
   return1
@@ -1547,18 +1567,6 @@
   local2 return1
 ;
 
-: extra-src
-  literal extra-script-src return1
-;
-
-: fast-dict-src
-  literal fast-dict-script-src return1
-;
-
-: assembler-src
-  literal assembler-script-src return1
-;
-
 : load
-  arg0 eval-string
+  literal eval-string jump-entry-data
 ;

@@ -57,26 +57,6 @@ function cellpad(str)
 
 var strings = {};
 
-function tokenize(def) {
-  return def.match(/([(][^)]+[)])|([^ \n\r\t]+)|([^ ]*"[^"]*")/g).
-      filter((t) => t[0] != '(').
-      map(function(t) {
-        if(t == '"' || t.indexOf('"') == -1) return t;
-        var parts = t.split('"');
-
-        if(parts.length > 1) {
-          var label = genlabel('string');
-          strings[label] = parts[1];
-          if(parts[0].length > 0) {
-            return [ parts[0], label ];
-          } else {
-            return label;
-          }
-        }
-        return parts[0];
-      }).flat();
-}
-
 function next_token(str)
 {
   var sp = str.match(/\s*([^ \t\n\r]+)/)
@@ -119,12 +99,6 @@ function compile(asm, e, quote_numbers)
       asm.uint32(e);
     }
   }
-}
-
-function opcodes(asm, def) {
-  def.map(function(e) {
-    return compile(asm, e, true);
-  });
 }
 
 var stack = [];
@@ -543,12 +517,6 @@ Forth.assembler = function(ds, cs, info) {
     return asm;
   }
 
-  function deffns(name, def) {
-    return deffn(name, function(asm) {
-      opcodes(asm, tokenize(def));
-    });
-  }
-
   asm.label('isr_reset').
       call(0, VM.CPU.REGISTERS.CS).uint32('data_init').
       call(0, VM.CPU.REGISTERS.CS).uint32('output_init').
@@ -668,25 +636,34 @@ Forth.assembler = function(ds, cs, info) {
   });
   
   defop('call-data', function(asm) {
-    asm.push(EVAL_IP_REG).
-        //load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.SP).uint32(4).
-        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
+    // Given an entry in R0, load eval IP with the data value.
+    asm.push(EVAL_IP_REG). // save return
+        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8). // load data value
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin-code').
         ret();
   });
 
   defop('call-data-seq', function(asm) {
-    asm.push(EVAL_IP_REG).
-        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
-        inc(EVAL_IP_REG).uint32(4).
+    // Given an entry in R0, jump to it's data sequence's first value.
+    asm.push(EVAL_IP_REG). // save return
+        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8). // load entry data
+        inc(EVAL_IP_REG).uint32(4). // skip the length
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('begin-code').
         ret();
   });
 
+  defop('exec-data-seq', function(asm) {
+    // Given an entry in R0, load IP with the address after the data value's length.
+    asm.load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.R0).uint32(8). // load entry data
+        inc(VM.CPU.REGISTERS.R1).uint32(4). // skip length
+        mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R1);
+  });
+
   defop('jump-entry-data', function(asm) {
-    asm.pop(VM.CPU.REGISTERS.R0).
-        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8).
-        inc(EVAL_IP_REG).uint32(4).
+    // Load the eval IP with the entry at the ToS's data value.
+    asm.pop(VM.CPU.REGISTERS.R0). // entry
+        load(EVAL_IP_REG, 0, VM.CPU.REGISTERS.R0).uint32(8). // load data value
+        inc(EVAL_IP_REG).uint32(4). // skip sequence length
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code').
         ret();
   });
@@ -753,12 +730,6 @@ Forth.assembler = function(ds, cs, info) {
     asm.
         load(VM.CPU.REGISTERS.R0, 0, EVAL_IP_REG).int32(0).
         inc(EVAL_IP_REG).uint32(4).
-        //callr(VM.CPU.REGISTERS.R0, VM.CPU.REGISTERS.CS).
-        /*
-        cls(VM.CPU.STATUS.NUMERICS).
-        addi(VM.CPU.REGISTERS.CS, VM.CPU.REGISTERS.STATUS).
-        mov(VM.CPU.REGISTERS.IP, VM.CPU.REGISTERS.R0).
-        */
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.R0).uint32(4).
         ret();
   });
@@ -795,8 +766,6 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('shift-stack-loop');
   });
 
-  deffns('test-returnN', "7 8 9 3 pause returnN");
-  
   defop('return1', function(asm) {
     asm.
         //load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(4).
@@ -857,6 +826,39 @@ Forth.assembler = function(ds, cs, info) {
         mov(VM.CPU.REGISTERS.SP, FP_REG).
         pop(FP_REG).
         pop(EVAL_IP_REG).
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+
+  defop('return-to', function(asm) {
+    asm.
+        // save where to pop
+        pop(VM.CPU.REGISTERS.R0).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // move SP
+        mov(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.R0).
+        // next
+        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
+  });
+  
+  defop('return0-n', function(asm) {
+    asm.
+        // save number cells to pop
+        pop(VM.CPU.REGISTERS.R0).
+        // pop frame
+        mov(VM.CPU.REGISTERS.SP, FP_REG).
+        pop(FP_REG).
+        pop(EVAL_IP_REG).
+        // drop N arguments
+        load(VM.CPU.REGISTERS.R2, 0, VM.CPU.REGISTERS.INS).uint32(4).
+        cls(VM.CPU.STATUS.NUMERICS).
+        muli(VM.CPU.REGISTERS.R2, VM.CPU.REGISTERS.STATUS).
+        cls(VM.CPU.STATUS.NUMERICS).
+        addi(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.STATUS).
+        mov(VM.CPU.REGISTERS.SP, VM.CPU.REGISTERS.R0).
+        // make call
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
   
@@ -1404,33 +1406,6 @@ Forth.assembler = function(ds, cs, info) {
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
   });
 
-  defop('dpush-short', function(asm) {
-    asm.
-        pop(VM.CPU.REGISTERS.R0).
-        load(VM.CPU.REGISTERS.R1, 0, VM.CPU.REGISTERS.INS).uint32(16).
-        cls(VM.CPU.STATUS.NUMERICS).
-        bsl(VM.CPU.REGISTERS.R1, VM.CPU.REGISTERS.STATUS).
-        inc(HEAP_REG).uint32(2).
-        store(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
-  });
-  
-  defop('dpop-short', function(asm) {
-    asm.
-        load(VM.CPU.REGISTERS.R0, 0, HEAP_REG).uint32(0).
-        load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0xFFFF).
-        and(VM.CPU.REGISTERS.R1).
-        dec(HEAP_REG).uint32(2).
-        push(VM.CPU.REGISTERS.R0).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
-  });
-
-  defop('ddrop-short', function(asm) {
-    asm.
-        dec(HEAP_REG).uint32(2).
-        load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
-  });
-
   defop('dmove', function(asm) {
     asm.pop(HEAP_REG).
         load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('next-code');
@@ -1594,13 +1569,13 @@ Forth.assembler = function(ds, cs, info) {
 
   //tok = tokenize(forth_sources.extra);
   interp(asm, forth_sources.extra);
-  interp(asm, forth_sources.assembler);
+  //interp(asm, forth_sources.assembler);
 
+  for(var n in forth_sources) {
+    interp(asm, `: ${n}-src literal sources-${n}-src return1 ;`);
+  }
+  
   asm.label('*program-size*');
-
-  asm.label('extra-script-src').bytes(cellpad(forth_sources.extra));
-  asm.label('fast-dict-script-src').bytes(cellpad(forth_sources.fast_dict));
-  asm.label('assembler-script-src').bytes(cellpad(forth_sources.assembler));
 
   asm.label('symbols-begin');
 
@@ -1740,6 +1715,12 @@ Forth.assembler = function(ds, cs, info) {
   //last_label = dict_entry('e-endcol', 'call-data-code', 'endcol-ops', last_label);
   
   asm.label('immediate-dictionary').uint32(last_label);
+
+  asm.label('sources').uint32('sources-end', true);
+  for(var n in forth_sources) {
+    asm.label('sources-' + n + '-src').bytes(cellpad(forth_sources[n]));
+  }
+  asm.label('sources-end');
   
   /*
   asm.label('image-size').
@@ -1759,8 +1740,6 @@ Forth.assemble = function(ds, cs, info) {
 Forth.longify = longify;
 Forth.cellpad = cellpad;
 Forth.sources = forth_sources;
-Forth.opcodes = opcodes;
-Forth.tokenize = tokenize;
 Forth.interp = interp;
 Forth.execute = execute;
 

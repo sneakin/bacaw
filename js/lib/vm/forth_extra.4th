@@ -1,15 +1,11 @@
 write-helo
 write-crnl
 
-: (
-  *tokenizer* literal 41 tokenizer-skip-until
-;
-
-( Add the latest dictionary entry to the immediate dictionary. )
 : immediate dict add-immediate ;
 
-( Now make comments immediate. )
-' ( add-immediate drop
+: (
+  *tokenizer* literal 41 tokenizer-skip-until
+; immediate
 
 ( Add the latest dictionary entry to the immediate dictionary and remove it from the normal dictionary. )
 : immediate-only immediate drop-dict ;
@@ -492,7 +488,7 @@ literal endcol jump-entry-data
 ;
 
 : memdump-bytes ( ptr num-bytes )
-  arg0 UNLESS return0 THEN
+  arg0 literal 0 > UNLESS return0 THEN
   arg1 peek write-unsigned-int write-space
   drop
   arg0 cell- swapdrop set-arg0
@@ -507,10 +503,11 @@ literal endcol jump-entry-data
 ;
 
 : memdump ( start-ptr num-bytes )
-  arg0 UNLESS return0 THEN
+  arg0 literal 0 > UNLESS return0 THEN
   arg1 arg0 literal 32 min rotdrop2 memdump-line ( arg1 bytes-to-dump )
   arg0 dup1 int-sub set-arg0
   int-add set-arg1
+  pause
   RECURSE
 ;
 
