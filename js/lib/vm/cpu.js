@@ -2631,6 +2631,26 @@ VM.CPU.prototype.enable_interrupts = function()
     return this;
 }
 
+VM.CPU.prototype.save_state = function()
+{
+  var self = this;
+  
+  return {
+    registers: util.n_times(VM.CPU.REGISTER_COUNT, function(n) {
+      return self.regread(n);
+    })
+  };
+}
+
+VM.CPU.prototype.restore_state = function(state)
+{
+  if(state['registers']) {
+    for(var i = 0; i < VM.CPU.REGISTER_COUNT; i++) {
+      this.regwrite(i, state.registers[i]);
+    }
+  }
+}
+
 
 function vm_run_dispatch_table_tests(tbl, vm, op)
 {

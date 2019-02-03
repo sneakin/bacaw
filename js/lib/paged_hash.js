@@ -106,6 +106,11 @@ PagedHash.prototype.page_for_address = function(addr)
   return Math.floor(addr / PagedHash.PageSize);
 }
 
+PagedHash.prototype.map = function(f)
+{
+  return this.ranges.map(f);
+}
+
 if(typeof(module) != 'undefined') {
   module.exports = PagedHash;
 }

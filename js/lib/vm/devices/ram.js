@@ -78,6 +78,23 @@ RAM.prototype.step = function()
   return false;
 }
 
+RAM.prototype.save_state = function()
+{
+  return {
+    length: this.length,
+    memory: this.read(0, this.length)
+  };
+}
+
+RAM.prototype.restore_state = function(state)
+{
+  if(state['memory']) {
+    this.set_data(new Uint8Array(state.memory));
+  } else if(state['length']) {
+    this.set_data(new Uint8Array(state.length));
+  }
+}
+
 var RAM_TYPE_ACCESSORS = [
     [ "f", "Float32" ],
     [ "l", "Int32" ],

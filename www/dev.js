@@ -1,5 +1,6 @@
+// -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 4 -*-
 const Runner = require('vm/runners/www.js');
-const Forth = require('vm/forth');
+const BootLoader = require('vm/boot_loader.js');
 const RegisterTable = require('dev/register_table');
 const CPUInfo = require('dev/cpu_info');
 const StackDisplay = require('dev/stack_display');
@@ -74,13 +75,12 @@ function dev_init()
         }
     };
     var step = document.getElementById('step-button');
-    step.onclick = function() {
-        if(vm.running) {
-            vm.stop();
-        } else {
-            vm.step();
-            vm.debug_dump();
-        }
+  step.onclick = function() {
+      vm.stop();
+      if(vm.cpu) {
+        vm.cpu.halted = false;
+        vm.cpu.step();
+      }
     };
     
     var reset = document.getElementById('reset-button');
@@ -139,8 +139,8 @@ function dev_init()
     irq: output_irq
   };
 
-  var forth = Forth.assemble(1024*1024, 0, vm.info);
-  vm.cpu.memwrite(0, forth);
+  var boot_loader = BootLoader.assemble(1024*1024, 0, vm.info);
+  vm.cpu.memwrite(0, boot_loader);
 }
 
 if(typeof(window) != 'undefined') {

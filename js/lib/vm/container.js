@@ -135,7 +135,11 @@ VM.Container.prototype.reset = function()
 VM.Container.prototype.step = function()
 {
     this.cycles++;
-    
+
+  if(this.cpu && this.cpu.halted) {
+    this.cpu.halted = false;
+  }
+  
     this.do_callback('step');
     
     var done = 0;

@@ -31,7 +31,6 @@ directory buildroot.join('images') => buildroot
 [ 'style.css',
   'runner_style.css',
   'dev_style.css',
-  'forth.css',
   'images/unscii-8.png',
   'images/unscii-16.png'
 ].each do |name|
