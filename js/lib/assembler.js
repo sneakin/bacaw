@@ -71,6 +71,9 @@ Assembler_Impl.prototype.encode_call_args = function(vm, op_call, n, ip)
             if(op_call[2]) { // relative
                 value -= ip;
             }
+            if(typeof(op_call[3]) == 'function') {
+              value = op_call[3](value);
+            }
             return [ value & 0xFFFF, value >> 16 ];
         } else {
             return [ op_call[1] & 0xFFFF, op_call[1] >> 16 ];
@@ -124,14 +127,18 @@ Assembler_Impl.UnknownKeyError = function(label)
     this.msg = "Unknown key";
     this.label = label;
 }
+Assembler_Impl.UnknownKeyError.prototype.toString = function()
+{
+  return this.msg + ": " + this.label;
+}
 
 Assembler_Impl.prototype.resolve = function(label, relative)
 {
   if(this.labels[label] == null) {
         throw new Assembler_Impl.UnknownKeyError(label);
     }
-    
-    if(relative) {
+
+    if(relative == true) {
         return this.labels[label] - this.ip();
     } else {
         return this.labels[label];
