@@ -38,14 +38,9 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     if(typeof(window) != 'undefined') window.vm = vm;
 
   mmu = new VM.MMU();
-  	//cpu = new VM.CPU(mmu, 1<<16);
-  //mmu.map_memory(0, 0x2, new RAM(0x2));
-    //  mmu.map_memory(0x2, 0x10000, new RAM(0x10000 - 0x2));
-
-  // FIXME still have problems reading and writing at the divide
-  // mmu.map_memory(0, 4096, new RAM(4096));
-	//   cpu = new VM.CPU(mmu, mem_size);
-  //   mmu.map_memory(4096, mem_size - 4096, new RAM(mem_size - 4096));
+    // To have a memory division:
+    // mmu.map_memory(0, 4096, new RAM(4096));
+    // mmu.map_memory(4096, mem_size - 4096, new RAM(mem_size - 4096));
 
     mmu.map_memory(0, mem_size, new RAM(mem_size));
 	  cpu = new VM.CPU(mmu, mem_size);

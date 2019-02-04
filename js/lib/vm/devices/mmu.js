@@ -11,7 +11,6 @@ if((typeof(window) != 'undefined' && !window['VM']) ||
 VM.MMU = function()
 {
   this.name = "MMU";
-  //this.memory_map = new RangedHash();
   this.memory_map = new PagedHash();
 }
 
@@ -75,13 +74,13 @@ VM.MMU.prototype.memread1 = function(addr, type)
   if(mem == null) throw new VM.MMU.NotMappedError(addr);
   
   var real_addr = addr - mem.addr;
-  //if(real_addr < (mem.size - type.byte_size)) {
+  if(real_addr < (mem.size - type.byte_size)) {
     return mem.value.read1(real_addr, type);
-  /*} else {
-    var out = this.read(addr, type.byte_size);
+  } else {
+    var out = this.memread(addr, type.byte_size);
     var dv = new DataView(out.buffer, out.byteOffset);
     return type.get(dv, 0, true);
-  }*/
+  }
 }
 
 VM.MMU.prototype.memreadl = function(addr)
@@ -131,14 +130,14 @@ VM.MMU.prototype.memwrite1 = function(addr, value, type)
   if(mem == null) throw new VM.MMU.NotMappedError(addr);
 
   var real_addr = addr - mem.addr;
-  //if(real_addr < (mem.size - type.byte_size)) {
+  if(real_addr < (mem.size - type.byte_size)) {
     return mem.value.write1(real_addr, value, type);
-  /*} else {
+  } else {
     var bytes = new Uint8Array(type.byte_size);
     var dv = new DataView(bytes.buffer);
     type.set(dv, 0, value, true);
     return this.memwrite(addr, bytes);
-  }*/
+  }
 }
 
 VM.MMU.prototype.memwritel = function(addr, n)
@@ -192,4 +191,32 @@ VM.MMU.prototype.restore_state = function(state)
       }
     }
   }
+}
+
+VM.MMU.test_suite = function()
+{
+  const RAM = require('vm/devices/ram');
+  const assert = require('asserts.js');
+
+  var mmu = new VM.MMU();
+  var size = PagedHash.PageSize;
+  mmu.map_memory(0, size, new RAM(size));
+  mmu.map_memory(size, size, new RAM(size));
+
+  // read/write
+  assert.assert(mmu.memwrite(0, [ 1, 2, 3, 4 ]) == 4, 'returns number bytes writen');
+  assert.assert(mmu.memread(0, 4).toString() == [ 1, 2, 3, 4 ].toString(), 'reads the bytes that were writen');
+  
+  // read and write at a divide
+  assert.assert(mmu.memwrite(size - 2, [ 1, 2, 3, 4]) == 4, 'returns number of bytes writen');
+  assert.assert(mmu.memread(size - 2, 4).toString() == [ 1, 2, 3, 4 ].toString(), 'reads the bytes that were writen');
+
+  // integers at the divide
+  for(var offset = 0; offset < 4; offset++) {
+    mmu.memwriteL(size - offset, 0x12345678);
+    assert.assert(mmu.memreadL(size - offset) == 0x12345678, 'reads the integer that was writen offset by ' + offset);
+    assert.assert(mmu.memreadS(size - offset + 1) == 0x3456, 'reads shorts');
+  }
+  
+  return mmu;
 }
