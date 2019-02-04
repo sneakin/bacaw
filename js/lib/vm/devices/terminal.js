@@ -170,6 +170,11 @@ Terminal.prototype.get_output_device = function(mem_size, vm, irq)
     return new OutputStream(this.get_writable(), mem_size, vm, irq);
 }
 
+Terminal.prototype.clear = function()
+{
+  this.term.clear();
+}
+
 if(typeof(module) != 'undefined') {
     module.exports = Terminal;
 }
