@@ -120,10 +120,7 @@ table, input {
 */
 
 .info {
-    /*float: left;*/
     display: block;
-    /*font-size: 1.2ex;*/
-    /*height: 60ex;*/
 }
 
 #cpu-state .info {
