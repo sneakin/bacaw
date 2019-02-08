@@ -9,18 +9,15 @@ $: << root.parent.join('lib')
 require 'tasks'
 
 outputs = [ 'index.html',
-            'runner.html',
+            'index.css',
             'dev.html',
+            'dev_style.css',
             'doc/index.html',
             'style.css',
             'tabs.css',
-            'runner_style.css',
-            'dev_style.css',
-            'forth.html',
-            'forth.css',
+            'xterm.css',
             'images/unscii-8.png',
-            'images/unscii-16.png',
-            'xterm.css'
+            'images/unscii-16.png'
           ].collect do |src|
   buildroot.join(src)
 end
@@ -31,8 +28,8 @@ directory buildroot.join('images') => buildroot
 
 [ 'style.css',
   'tabs.css',
-  'runner_style.css',
   'dev_style.css',
+  'index.css',
   'images/unscii-8.png',
   'images/unscii-16.png'
 ].each do |name|
@@ -49,16 +46,12 @@ file buildroot.join('xterm.css') => root.join('node_modules', 'xterm', 'dist', '
 end
 
 BrowserifyRunner.root = root
-BrowserifyRunner.bundle buildroot.join('runner.js') => [ root.join('www/runner.js') ]
-BrowserifyRunner.bundle buildroot.join('forth_www.js') => [ root.join('www/forth_www.js') ]
 BrowserifyRunner.bundle buildroot.join('dev.js') => [ root.join('www/dev.js') ]
 BrowserifyRunner.bundle buildroot.join('doc/doc.js') => [ root.join('www/doc/doc.js') ]
 
 html_file buildroot.join('index.html') => [ root.join('www/index.src.html'), buildroot ]
-html_file buildroot.join('runner.html') => [ root.join('www/runner.src.html'), buildroot.join('runner.js'), buildroot ]
 html_file buildroot.join('dev.html') => [ root.join('www/dev.src.html'), buildroot.join('dev.js'), buildroot ]
 html_file buildroot.join('doc/index.html') => [ root.join('www/doc/index.src.html'), buildroot.join('doc/doc.js'), buildroot.join('doc') ]
-html_file buildroot.join('forth.html') => [ root.join('www/forth.src.html'), buildroot.join('forth_www.js'), buildroot ]
 
 desc 'Start a webserver on port 9090 to serve the build directory.'
 task :serve do

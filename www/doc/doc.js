@@ -1,8 +1,10 @@
-const bc = require("bacaw.js");
+const Subber = require('subber.js');
 const vmdoc = require('vm/vm-doc.js');
 
 function doc_init()
 {
+  Subber.sub(document.body);
+  
     var el = document.getElementById('register-docs');
     el.replaceWith(vmdoc.build_reg_doc());
     var el = document.getElementById('instruction-docs');
@@ -12,7 +14,6 @@ function doc_init()
 function doc_index_onload()
 {
   doc_init();
-  bc.init();
 }
 
 if(typeof(window) != 'undefined') {
