@@ -13,6 +13,7 @@ outputs = [ 'index.html',
             'dev.html',
             'doc/index.html',
             'style.css',
+            'tabs.css',
             'runner_style.css',
             'dev_style.css',
             'forth.html',
@@ -29,6 +30,7 @@ directory buildroot.join('doc') => buildroot
 directory buildroot.join('images') => buildroot
 
 [ 'style.css',
+  'tabs.css',
   'runner_style.css',
   'dev_style.css',
   'images/unscii-8.png',

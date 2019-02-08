@@ -1,11 +1,114 @@
+body, ul, li {
+    padding: 0px;
+    margin: 0px;
+}
+
 body {
     /*font-family: "Unscii 16-full", "unifont", "Courier", "fixed";*/
     font-family: "Inconsolata", "unifont", monospace;
+    font-size: 14px;
+    margin-top: 8ex;
+    background: #eee;
+    color: black;
+}
+
+#footer, .topbar, .tabpage {
+    background: white;
+}
+
+.topbar {
+    position: fixed;
+    top: 0px;
+    left: 0px;
+    border-bottom: solid 2px red;
+    box-shadow: 0px 0px 2ex 0px red;
+    padding: 1ex;
+    width: 100%;
+    z-index: 128;
+}
+
+@media not pointer .topbar {
+    background: red;
+    font-size: 4.0em;
+}
+
+.topbar span {
+    margin-left: 2ex;
+}
+
+.topbar .logo {
+    margin: 0px;
+}
+
+.topbar INPUT {
+    margin-left: 1ex;
+}
+
+.top-tabs {
+    clear: both;
+}
+
+table, input {
+    font-size: inherit;
+}
+
+.content {
+    float: left;
+    margin-left: 1ex;
+}
+
+.sidebar, .sidebar DIV {
+    min-width: 40ex;
+}
+
+#sidebar-left {
+    width: 45ex;
+    margin-right: 1ex;
+    margin-left: 1ex;
+}
+
+#sidebar-left INPUT, #asm-editor INPUT, #asm-editor TEXTAREA {
+    margin-bottom: 1ex;
+}
+
+#sidebar-right {
+    margin-left: 1ex;
+}
+
+.right {
+    float: right;
+}
+
+.full-right {
+    text-align: right;
+    width: 100%;
+}
+
+.left {
+    float: left;
+}
+
+#displays {
+    min-height: 540px;
+    min-width: 660px;
 }
 
 .vm-display {
-    float: left;
     margin: 0.25em;
+}
+
+.tabpage {
+    padding: 1ex;
+    background: linear-gradient(to bottom, white, #eee) 50%;
+    border-left: solid 1px red;
+    border-right: solid 1px red;
+    border-image: linear-gradient(
+        to bottom, 
+        red,
+        rgba(255, 255, 255, 0)
+    ) 1%;
+    min-height: 20ex;
+    margin: 0px;
 }
 
 /*
@@ -17,13 +120,27 @@ body {
 */
 
 .info {
-    float: left;
+    /*float: left;*/
     display: block;
+    /*font-size: 1.2ex;*/
     /*height: 60ex;*/
+}
+
+#cpu-state .info {
+    float: left;
+}
+
+#cpu-state {
+    clear: left;
+    margin: 0px 1ex;
 }
 
 .cpu-info {
     display: block;
+}
+
+.horiz-bar {
+    clear: both;
 }
 
 .horiz-bar > * {
@@ -74,11 +191,89 @@ table tr:nth-child(odd), dl dd:nth-of-type(odd), dl dt:nth-of-type(odd) {
 }
 
 #console {
-    height: 16em;
+    height: 10em;
     overflow: scroll;
 }
 
 #stack {
-    height: 32em;
+    height: 60ex;
     overflow: scroll;
+}
+
+.xterm {
+    font-family: "Unscii 8", Inconsolata, Unifont, "GNU Unifont", courier-new, courier, monospace;
+    font-size: 16px;
+    padding: 0.25em;
+    width: 640px;
+}
+
+.xterm-viewport {
+    overflow: hidden !important;
+}
+
+#memory {
+    height: 480px;
+    overflow: scroll;
+}
+
+#memory-controls {
+    margin: 1ex;
+}
+
+INPUT#memory-offset {
+    width: 16ex;
+}
+
+INPUT#memory-page {
+    width: 8ex;
+}
+
+h1, h2, h3 {
+    text-shadow: 0em 0em 0.1em red;
+    color: black;
+}
+
+h1 { font-size: 120%; }
+h2 { font-size: 110%; }
+h3 { font-size: 105%; }
+
+#asm-editor TEXTAREA {
+    width: 100%;
+}
+
+#asm-log {
+    height: 16ex;
+}
+
+#asm-source {
+    height: 30ex;
+}
+
+.clearer {
+    clear: both;
+}
+
+#footer {
+    clear: both;
+    margin-top: 20ex;
+    padding: 2ex;
+    border-top: solid 2px red;
+    min-height: 3ex;
+    box-shadow: 0px 0px 2ex 0ex red;
+}
+
+DIV.tabs UL LI.active A {
+    background: white;
+}
+
+INPUT:hover, DIV.tabs UL LI.active A {
+    text-shadow: 0em 0em 0.5ex red;
+}
+
+DIV.tabs UL LI A:hover {
+    text-shadow: 0em 0em 0.5ex red;
+}
+
+INPUT:hover, INPUT:focus {
+    box-shadow: 0px 0px 1ex red;
 }

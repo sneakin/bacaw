@@ -1,0 +1,52 @@
+DIV.tabs {
+    clear: right;
+}
+
+DIV.tabs, DIV.tabs UL, DIV.tabs LI {
+    margin: 0px;
+    padding: 0px;
+}
+
+DIV.tabs UL {
+    display: block;
+    list-style-type: none;
+    height: 1.55em;
+    padding: 0px 0.1em;
+    border-bottom: solid 0.1em red;
+}
+
+DIV.tabs UL LI {
+    display: block;
+    float: left;
+    margin: 0px;
+    padding: 0px;
+    z-index: 0;
+}
+
+DIV.tabs UL LI A {
+    display: block;
+    margin: 0px;
+    margin-right: 0.1em;
+    margin-left: 0.1em;
+    padding: 0.2em 0.5em;
+    text-decoration: none;
+    color: black;
+    background: #eee;
+    border: solid 0.1em red;
+    border-radius: 0.5em 0.5em 0em 0em;
+    border-bottom: none;
+}
+
+DIV.tabs UL LI.right {
+    float: right;
+}
+
+DIV.tabs UL LI.active A {
+    border-bottom: none;
+    height: 1.15em;
+}
+
+.tabpage {
+    display: block;
+    z-index: 1;
+}

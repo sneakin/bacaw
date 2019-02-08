@@ -8,25 +8,55 @@ const MemoryDisplay = require('dev/memory_display');
 const InstructionDisplay = require('dev/instruction_display');
 const DeviceList = require('dev/device_list');
 const DevConDisplay = require('dev/dev_con_display');
+const Tabber = require('tabber');
+const FS = require('fs');
 
 const LOAD_OFFSET = 0;
 
 const Terminal = require('vm/devices/terminal');
 
+function AssemblyEditor(vm)
+{
+    var asm_load = document.getElementById('asm-load-button');
+    var src = document.getElementById('asm-source');
+    src.value = FS.readFileSync(__dirname + '/dev/assembly_editor_source.js', 'utf-8');
+    var log = document.getElementById('asm-log');
+    
+    asm_load.onclick = function() {
+        var f = new Function(src.value);
+        var asm = new VM.Assembler(vm);
+        try {
+            f(vm, asm);
+        } catch(e) {
+            log.innerText = e.stack;
+            console.log(e);
+        }
+    };
+}
+
+const STATE_ICONS = {
+    stopped: "🥚",
+    running: "🐣"
+};
+
 function dev_init()
 {
     var running = false;
     var run = document.getElementById('run-button');
+    var state_icon = document.getElementById('vm-state-icon');
+    state_icon.innerText = STATE_ICONS.stopped;
 
     // create the VM
     var vm = Runner.init(640, 480, LOAD_OFFSET, null, {
         run: function(vm) {
             running = false;
             run.value = 'Stop';
+            state_icon.innerText = STATE_ICONS.running;
         },
         stopped: function(vm) {
             running = true;
             run.value = 'Run';
+            state_icon.innerText = STATE_ICONS.stopped;
         },
         step: function(vm) {
         }
@@ -65,6 +95,25 @@ function dev_init()
     
     updater();
 
+    Tabber.init({ sets: [
+        { initial: 1,
+          tabs: document.querySelector('.test-tabs.tabs'),
+          pages: document.querySelectorAll('.test-tabs > .tabpage')
+        },
+        { tabs: document.querySelector('#sidebar-left > .tabs'),
+          pages: document.querySelectorAll('#sidebar-left > .tabpage')
+        },
+        { tabs: document.querySelector('#sidebar-right > .tabs'),
+          pages: document.querySelectorAll('#sidebar-right > .tabpage')
+        },
+        { tabs: document.querySelector('#displays .tabs'),
+          pages: document.querySelectorAll('#displays .tabpage')
+        },
+        { tabs: document.querySelector('#cpu-state > .tabs'),
+          pages: document.querySelectorAll('#cpu-state > .tabpage')
+        }
+    ]});
+
     // Button logic
     
     run.onclick = function() {
@@ -75,7 +124,7 @@ function dev_init()
         }
     };
     var step = document.getElementById('step-button');
-  step.onclick = function() {
+    step.onclick = function() {
       vm.stop();
       if(vm.cpu) {
         vm.cpu.halted = false;
@@ -114,6 +163,8 @@ function dev_init()
         }
     };
 
+    var asm_editor = new AssemblyEditor(vm);
+
     var term = new Terminal(document.getElementById('tty'), {
         fontFamily: 'Inconsolata',
         fontSize: 16
@@ -141,6 +192,7 @@ function dev_init()
 
   var boot_loader = BootLoader.assemble(1024*1024, 0, vm.info);
   vm.cpu.memwrite(0, boot_loader);
+    
 }
 
 if(typeof(window) != 'undefined') {

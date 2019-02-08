@@ -2,146 +2,228 @@
 <html>
 	<head>
     <meta charset="UTF-8" /> 
-    <meta name="viewport" content="width=800, initial-scale=0.5, maximum-scale=4, user-scalable=0"/> <!--320-->
+    <meta name="viewport" content="width=800, initial-scale=0.5, maximum-scale=3, user-scalable=0"/>
     <style type="text/css">
+      @import "xterm.css";
+      @import "tabs.css";
       @import "style.css";
       @import "dev_style.css";
-      @import "xterm.css";
     </style>
     <script src="dev.js" type="text/javascript"></script>
 	</head>
-	<body onload="dev_init();">
-    <div class="horiz-bar">
+  <body onload="dev_init();">
+    <!--
+    <div class="tabs top-tabs">
+      <ul>
+        <li class="active"><a href="#">Hello</a></li>
+        <li><a href="#">World</a></li>
+        <li><a href="#">Left</a></li>
+        <li class="right"><a href="#">Right</a></li>
+        <li class="right"><a href="#">Help</a></li>
+        <li class="right"><a href="#">Logout</a></li>
+      </ul>
+    </div>
+    -->
+    <div class="horiz-bar topbar">
+      <span id="vm-state-icon" class="logo">🐣</span>
       <input type="button" value="Run" id="run-button"/>
       <input type="button" value="Step" id="step-button"/>
       <input type="button" value="Reset" id="reset-button"/>
-      <input type="button" value="Reload" id="reload-button"/>
-      <input type="file" value="Load" id="load-button"/>
-      <label for="update-page-checkbox">Update Page?</label>
-      <input type="checkbox" value="1" checked="1" id="update-page-checkbox"/>
-      <br/>
+      <span>
+        <label for="update-page-checkbox">Update Page?</label>
+        <input type="checkbox" value="1" checked="1" id="update-page-checkbox"/>
+      </span>
     </div>
-    <div class="info">
-      <h1>Video</h1>
-      <div class="vm-display med-res"><canvas id="second_window">Sorry</canvas><canvas id="main_window">Sorry</canvas>
-      </div>
-    </div>
-    <div class="info">
-      <h1>TTY</h1>
-      <div class="vm-display">
-        <div id="tty"></div>
-      </div>
-    </div>
-    <div class="info cpu-info">
-      <h1>Info</h1>
-      <div id="info">
-        <dl>
-          <dt>Cycles</dt>
-          <dd id="info-cycles">0</dd>
-          <dt>Cycles/Sec</dt>
-          <dd id="info-cycles-per-sec">0</dd>
-          <dt>Frames/Sec</dt>
-          <dd id="info-frames-per-sec">0</dd>
-          <dt>ms/frame</dt>
-          <dd id="info-time-per-frame">0</dd>
-        </dl>
-      </div>
-      <h1>Console</h1>
-      <div id="console">
-        <ul id="console-log"></ul>
-      </div>
-    </div>
-    <div class="info">
-      <h1>Registers</h1>
-      <div id="registers">
-        <table id="register-table">
-          <tr>
-            <th>Name</th>
-            <th>Hex</th>
-            <th>Dec</th>
-          </tr>
-          <tr class="template">
-            <th class="name">Name</th>
-            <td class="register-value value-hex">Hex</td>
-            <td class="register-value value-dec">Dec</td>
-          </tr>
-        </table>
-      </div>
-    </div>
-    <div class="info">
-      <h1>Stack</h1>
-      <div id="stack">
-        <table id="stack-table">
-          <tr>
-            <th>Size</th>
-            <td id="stack-size-slots">{{num_slots}}</td>
-            <td id="stack-size-hex">{{#hex byte_size)}}</td>
-            <td id="stack-size-dec">{{#dec byte_size}}</td>
-          </tr>
-          <tr>
-            <th>Slot</th>
-            <th>Address</th>
-            <th>Hex</th>
-            <th>Dec</th>
-          </tr>
-          <tr class="slot-template">
-            <th class="offset">{{offset}}</th>
-            <td class="address">{{#hex address}}</td>
-            <td class="value-hex">{{#hex value}}</td>
-            <td class="value-dec">{{#dec value}}</td>
-          </tr>
-        </table>
-      </div>
-    </div>
-    <div class="info">
-      <h1>Instructions</h1>
-      <div id="instructions">
-        <div id="instructions-controls">
-          <label for="instructions-offset">Offset</label>
-          <input id="instructions-offset" value="0"></input>
-          <label for="instructions-follow">Follow?</label>
-          <input id="instructions-follow" value="1" type="checkbox" checked="1"></input>
-          <label for="instructions-show-args">Op Args?</label>
-          <input id="instructions-show-args" value="0" type="checkbox"></input>
+    <div class="content">
+      <div id="sidebar-left" class="sidebar left">
+        <div class="tabs"></div>
+        <div class="tabpage">
+          <h1>Program</h1>
+          <div>
+            <input type="file" value="Load" id="load-button"/>
+            <input type="button" value="Reload" id="reload-button"/>
+          </div>
+          <div class="cpu-info">
+            <h1>Info</h1>
+            <div id="info">
+              <dl>
+                <dt>Cycles</dt>
+                <dd id="info-cycles">0</dd>
+                <dt>Cycles/Sec</dt>
+                <dd id="info-cycles-per-sec">0</dd>
+                <dt>Frames/Sec</dt>
+                <dd id="info-frames-per-sec">0</dd>
+                <dt>ms/frame</dt>
+                <dd id="info-time-per-frame">0</dd>
+              </dl>
+            </div>
+          </div>
+          <div>
+            <h1>Console</h1>
+            <div id="console">
+              <ul id="console-log"></ul>
+            </div>
+          </div>
         </div>
-        <table id="instructions-table">
-          <tr>
-            <th>Address</th>
-            <th>Memory</th>
-            <th>Instruction</th>
-          </tr>
-          <tr class="template">
-            <td class="address"></td>
-            <td class="memory"></td>
-            <td class="instruction"></td>
-          </tr>
-        </table>
-      </div>
-    </div>
-    <div class="info">
-      <h1>Memory</h1>
-      <div id="memory">
-        <div id="memory-controls">
-          <label for="memory-offset">Offset</label>
-          <input id="memory-offset" value="0"></input>
-          <label for="memory-page">Page</label>
-          <input id="memory-page" value="0"></input>
+        <div id="vm-config" class="tabpage">
+          <h1>Configuration</h1>
+          <p>Change amount memory</p>
+          <p>Add/remove devices</p>
+          <p>Full reset</p>
         </div>
-        <table id="memory-table">
-          <tr>
-            <th>Address</th>
-            <th>Data</th>
-          </tr>
-          <tr class="template">
-            <td class="address"></td>
-            <td class="data"></td>
-          </tr>
-        </table>
+        <div id="asm-editor" class="tabpage">
+          <h1>Editor</h1>
+          <textarea id="asm-source"></textarea>
+          <div class="button-bar">
+            <input type="button" value="Load" id="asm-load-button"/>
+          </div>
+          <textarea id="asm-log"></textarea>
+        </div>      
+      </div>
+      <div class="left">
+        <div id="displays">
+          <div class="tabs"></div>
+          <div class="tabpage" id="display-tty">
+            <h1>TTY</h1>
+            <div class="vm-display">
+              <div id="tty"></div>
+            </div>
+          </div>
+          <div class="tabpage" id="display-video">
+            <h1>Video</h1>
+            <div class="vm-display med-res"><canvas id="second_window">Sorry</canvas><canvas width="640" height="480" id="main_window">Sorry</canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="sidebar-right" class="sidebar left">
+        <div class="tabs">
+        </div>
+        <div class="tabpage">
+          <div class="info">
+            <h1>Devices</h1>
+            <div id="devices">
+            </div>
+          </div>
+        </div>
+        <div class="tabpage">
+          <div class="info">
+            <h1>Memory</h1>
+            <div id="memory">
+              <div id="memory-controls">
+                <input id="memory-prev-page" value="&lt;" type="button"></input>
+                <input id="memory-next-page" value="&gt;" type="button"></input>
+                <label for="memory-page">Page</label>
+                <input id="memory-page" value="0"></input>
+                <label for="memory-offset">Offset</label>
+                <input id="memory-offset" value="0"></input>
+              </div>
+              <table id="memory-table">
+                <tr>
+                  <th>Address</th>
+                  <th>Data</th>
+                </tr>
+                <tr class="template">
+                  <td class="address"></td>
+                  <td class="data"></td>
+                </tr>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="tabpage">
+          <h1>Test tabs</h1>
+          <div class="test-tabs tabs"></div>
+          <div class="test-tabs">
+            <div class="tabpage"><h1>Alpha</h1> One two three</div>
+            <div class="tabpage"><h1>Beta</h1>Aye bee cee dee</div>
+            <div class="tabpage"><h1>Gamma</h1>X y z</div>
+            <div class="tabpage"><h1>Delta</h1>1 2 3</div>
+          </div>
+        </div>
+      </div>
+      <br class="clearer"/>
+    </div>
+    <div id="cpu-state" class="">
+      <div class="tabs"></div>
+      <div class="tabpage">
+        <h1>CPU</h1>
+        <div class="info">
+          <h1>Registers</h1>
+          <div id="registers">
+            <table id="register-table">
+              <tr>
+                <th>Name</th>
+                <th>Hex</th>
+                <th>Dec</th>
+              </tr>
+              <tr class="template">
+                <th class="name">Name</th>
+                <td class="register-value value-hex">Hex</td>
+                <td class="register-value value-dec">Dec</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+        <div class="info">
+          <h1>Stack</h1>
+          <div id="stack">
+            <table id="stack-table">
+              <tr>
+                <th>Size</th>
+                <td id="stack-size-slots">{{num_slots}}</td>
+                <td id="stack-size-hex">{{#hex byte_size)}}</td>
+                <td id="stack-size-dec">{{#dec byte_size}}</td>
+              </tr>
+              <tr>
+                <th>Slot</th>
+                <th>Address</th>
+                <th>Hex</th>
+                <th>Dec</th>
+              </tr>
+              <tr class="slot-template">
+                <th class="offset">{{offset}}</th>
+                <td class="address">{{#hex address}}</td>
+                <td class="value-hex">{{#hex value}}</td>
+                <td class="value-dec">{{#dec value}}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+        <div class="info">
+          <h1>Instructions</h1>
+          <div id="instructions">
+            <div id="instructions-controls">
+              <label for="instructions-offset">Offset</label>
+              <input id="instructions-offset" value="0"></input>
+              <label for="instructions-follow">Follow?</label>
+              <input id="instructions-follow" value="1" type="checkbox" checked="1"></input>
+              <label for="instructions-show-args">Op Args?</label>
+              <input id="instructions-show-args" value="0" type="checkbox"></input>
+            </div>
+            <table id="instructions-table">
+              <tr>
+                <th>Address</th>
+                <th>Memory</th>
+                <th>Instruction</th>
+              </tr>
+              <tr class="template">
+                <td class="address"></td>
+                <td class="memory"></td>
+                <td class="instruction"></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+        <br class="clearer"/>
       </div>
     </div>
-    <div class="info">
-      <h1>Devices</h1>
-      <div id="devices">
+    <div id="footer">
+      <div class="left">
+        Get the source <a href="">Git...</a>
+      </div>
+      <div class="right">
+        Copyright &copy; 2019 Nolan Eakins <a href="http://semanticgap.com/">SemanticGap&trade;</a>
       </div>
     </div>
 	</body>

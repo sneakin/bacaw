@@ -20,6 +20,16 @@ function MemoryDisplay(vm, page_size, row_size)
         self.set_page(e.target.value);
     }
 
+  this.next_page = document.getElementById('memory-next-page');
+  this.next_page.onclick = function() {
+    self.set_page(self.page() + 1);
+  }
+
+  this.prev_page = document.getElementById('memory-prev-page');
+  this.prev_page.onclick = function() {
+    self.set_page(self.page() - 1);
+  }
+  
     var table = document.getElementById('memory-table');
     var template = table.getElementsByClassName('template')[0];
     template.remove();
@@ -57,9 +67,14 @@ MemoryDisplay.prototype.set_address = function(addr)
     this.update_data();
 }
 
+MemoryDisplay.prototype.page = function()
+{
+  return parseInt(this.page_input.value);
+}
+
 MemoryDisplay.prototype.update_data = function()
 {
-    var page = parseInt(this.page_input.value);
+    var page = this.page();
     
     for(var i = 0; i < this.row_count; i++) {
         var row_addr = (page * this.page_size) + (i * this.row_size);
