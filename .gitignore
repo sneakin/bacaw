@@ -1,0 +1,12 @@
+*~
+*.bak
+\#*\#
+*.sw*
+./index.html
+build
+*.exe
+*.o
+*.a
+*.lib
+node_modules
+.deps.rake

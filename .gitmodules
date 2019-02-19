@@ -1,0 +1,3 @@
+[submodule "vendor/rake-node"]
+	path = vendor/rake-node
+	url = git@github.com:sneakin/rake-node.git

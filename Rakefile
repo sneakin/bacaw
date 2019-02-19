@@ -6,8 +6,12 @@ root = Pathname.new(__FILE__).parent.expand_path
 buildroot ||= ENV.fetch('BUILDROOT', root.join('build'))
 
 $: << root.parent.join('lib')
-require 'tasks'
+$: << root.join('vendor/rake-node/lib')
+require 'rake/browserify'
 
+NODE_PATH << [ root.join('js', 'lib').to_s,
+               root.join('www').to_s
+             ]
 outputs = [ 'index.html',
             'index.css',
             'dev.html',
