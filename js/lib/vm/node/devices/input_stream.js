@@ -51,42 +51,56 @@ InputStream.prototype.trigger_interrupt = function()
   }
 }
 
-InputStream.prototype.read_more = function(data)
+InputStream.prototype.encode = function(data)
 {
-  /*
-    var len = this.data.buffer.length;
-    if(this.stream._readableState) len = Math.min(this.stream._readableState.length, len);
-    if(this.stream.readableLength) len = Math.min(this.stream.readableLength(), len);
-    
-  var data = this.stream.read(Math.max(len, 1));
-*/
-  this.stream.pause();
+}
 
-  if(this.debug) {
-    console.log("InputStream", data && data.length, this.data.eos, this.data.ready, "Read ", data);
-  }
-
+InputStream.prototype.set_data = function(data)
+{
   if(data && data.length > 0) {
+    var length = data.length;
+    
     if(typeof(data) == 'string') {
-      for(var i = 0; i < data.length; i++) {
-        this.data.buffer[i] = data.charCodeAt(i);
+      if(typeof(TextEncoder) != 'undefined') {
+        if(this.encoder == null) {
+          this.encoder = new TextEncoder();
+        }
+        var bytes = this.encoder.encode(data, { stream: true });
+        this.data.buffer.set(bytes);
+        length = bytes.length;
+      } else {
+        for(var i = 0; i < data.length; i++) {
+          this.data.buffer[i] = data.charCodeAt(i);
+        }
       }
-      this.data.buffer.fill(0, data.length);
     } else {
       this.data.buffer.set(data);
-      this.data.buffer.fill(0, data.length);
     }    
+  
+    this.data.buffer.fill(0, length);
+    this.data.ready = length;
+    this.data.eos = 0;
   } else {
     this.data.buffer.fill(0);
     this.data.ready = 0;
+  }
+}
+
+InputStream.prototype.read_more = function(data)
+{
+  this.stream.pause();
+
+  if(this.debug) {
+    console.log("InputStream", data && data.length, this.data.eos, this.data.ready, "Read ", data, (new TextEncoder()).encode(data));
+  }
+
+  this.set_data(data);
+  if(data == null || data.length == 0) {
     return false;
   }
   
-    this.data.ready = data.length;
-    this.data.eos = 0;
-
-    this.trigger_interrupt();
-    return this;
+  this.trigger_interrupt();
+  return this;
 }
 
 InputStream.prototype.ram_size = function()

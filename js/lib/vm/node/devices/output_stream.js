@@ -75,14 +75,29 @@ OutputStream.prototype.ram_size = function()
   return this.ram.length;
 }
 
+OutputStream.prototype.decode = function(bytes)
+{
+  if(typeof(TextDecoder) != 'undefined') {
+    if(this.decoder == null) {
+      this.decoder = new TextDecoder();
+    }
+    return this.decoder.decode(bytes, { stream: true });
+  } else {
+    return String.fromCharCode.apply(null, bytes);
+  }
+}
+
 OutputStream.prototype.flush = function()
 {
   var self = this;
-  var r = this.stream.write(String.fromCharCode.apply(null, this.data.buffer.slice(0, this.data.flush)),
+  var bytes = this.data.buffer.slice(0, this.data.flush);
+  var data = this.decode(bytes);
+  
+  var r = this.stream.write(data,
                             null,
                             function() {
                               if(self.data.flush > 0) {
-                                if(self.debug) console.log("OutputStream flushed");
+                                if(self.debug) console.log("OutputStream flushed", data, bytes);
                                 self.data.eos = OutputStream.EOSStates.OK;
                                 self.ram.set(0, self.ram.length, 0);
                                 self.trigger_interrupt();

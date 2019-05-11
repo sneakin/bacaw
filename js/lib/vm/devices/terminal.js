@@ -65,7 +65,7 @@ Terminal.prototype.readableLength = function()
 
 Terminal.prototype.write = function(data)
 {
-  if(this.debug) console.log("Terminal write:", data, data.charCodeAt(0));
+  if(this.debug) console.log("Terminal write:", data, data.split(''));
     this.term.write(data);
     return this;
 }
