@@ -5,6 +5,8 @@ const RAM = require('vm/devices/ram.js');
 const RingBuffer = require('vm/ring_buffer.js');
 require('vm/types.js');
 
+const TextEncoder = require('util/text_encoder');
+
 function InputStream(stream, mem_size, vm, irq)
 {
   mem_size = mem_size || 1024;
@@ -61,18 +63,13 @@ InputStream.prototype.set_data = function(data)
     var length = data.length;
     
     if(typeof(data) == 'string') {
-      if(typeof(TextEncoder) != 'undefined') {
-        if(this.encoder == null) {
-          this.encoder = new TextEncoder();
-        }
-        var bytes = this.encoder.encode(data, { stream: true });
-        this.data.buffer.set(bytes);
-        length = bytes.length;
-      } else {
-        for(var i = 0; i < data.length; i++) {
-          this.data.buffer[i] = data.charCodeAt(i);
-        }
+      if(this.encoder == null) {
+        this.encoder = new TextEncoder();
       }
+      
+      var bytes = this.encoder.encode(data, { stream: true });
+      this.data.buffer.set(bytes);
+      length = bytes.length;
     } else {
       this.data.buffer.set(data);
     }    

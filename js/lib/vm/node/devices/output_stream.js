@@ -5,6 +5,8 @@ const DataStruct = require('data_struct.js');
 const RAM = require('vm/devices/ram.js');
 require('vm/types.js');
 
+const TextDecoder = require('util/text_decoder');
+
 function OutputStream(stream, mem_size, vm, irq)
 {
   mem_size = mem_size || 1024;
@@ -77,14 +79,10 @@ OutputStream.prototype.ram_size = function()
 
 OutputStream.prototype.decode = function(bytes)
 {
-  if(typeof(TextDecoder) != 'undefined') {
-    if(this.decoder == null) {
-      this.decoder = new TextDecoder();
-    }
-    return this.decoder.decode(bytes, { stream: true });
-  } else {
-    return String.fromCharCode.apply(null, bytes);
+  if(this.decoder == null) {
+    this.decoder = new TextDecoder();
   }
+  return this.decoder.decode(bytes, { stream: true });
 }
 
 OutputStream.prototype.flush = function()
