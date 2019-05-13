@@ -4,6 +4,8 @@ const Colors = require('colors/safe');
 const util = require('more_util');
 const InputStream = require('vm/node/devices/input_stream');
 const OutputStream = require('vm/node/devices/output_stream');
+const TextDecoder = require('util/text_decoder');
+const TextEncoder = require('util/text_encoder');
 
 function Terminal(element, term_opts)
 {
@@ -66,13 +68,14 @@ Terminal.prototype.readableLength = function()
 Terminal.prototype.write = function(data)
 {
   if(this.debug) console.log("Terminal write:", data, data.split(''));
-    this.term.write(data);
-    return this;
+  this.term.write(data);
+  return this;
 }
 
 Terminal.Readable = function(terminal)
 {
     this.terminal = terminal;
+    this.encoder = new TextEncoder();
     this.callbacks = [];
 
     var self = this;
@@ -117,7 +120,8 @@ Terminal.Readable.prototype.on_data = function()
 
 Terminal.Readable.prototype.read = function(amount)
 {
-    return this.terminal.read(amount);
+    var line = this.terminal.read(amount);
+    return this.encoder.encode(line);
 }
 
 Terminal.Readable.prototype.readableLength = function()
@@ -128,6 +132,7 @@ Terminal.Readable.prototype.readableLength = function()
 
 Terminal.Writable = function(terminal)
 {
+    this.decoder = new TextDecoder();
     this.terminal = terminal;
     this.callbacks = [];
 }
@@ -140,6 +145,9 @@ Terminal.Writable.prototype.on = function(event, fn)
 
 Terminal.Writable.prototype.write = function(data, encoding, callback)
 {
+  if(typeof(data) != 'string') {
+    data = this.decoder.decode(data, { stream: data.length != 0 });
+  }
   this.terminal.write(data);
   if(callback) setTimeout(callback, 1); // Writeables expect an async callback
   return this;
@@ -147,6 +155,7 @@ Terminal.Writable.prototype.write = function(data, encoding, callback)
 
 Terminal.Writable.prototype.end = function()
 {
+    this.write(""); // flush the decoder
     return this;
 }
 

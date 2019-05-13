@@ -55,6 +55,11 @@ InputStream.prototype.trigger_interrupt = function()
 
 InputStream.prototype.encode = function(data)
 {
+  if(this.encoder == null) {
+    this.encoder = new TextEncoder();
+  }
+      
+  return this.encoder.encode(data, { stream: true });
 }
 
 InputStream.prototype.set_data = function(data)
@@ -63,11 +68,7 @@ InputStream.prototype.set_data = function(data)
     var length = data.length;
     
     if(typeof(data) == 'string') {
-      if(this.encoder == null) {
-        this.encoder = new TextEncoder();
-      }
-      
-      var bytes = this.encoder.encode(data, { stream: true });
+      var bytes = this.encode(data);
       this.data.buffer.set(bytes);
       length = bytes.length;
     } else {
@@ -88,7 +89,7 @@ InputStream.prototype.read_more = function(data)
   this.stream.pause();
 
   if(this.debug) {
-    console.log("InputStream", data && data.length, this.data.eos, this.data.ready, "Read ", data, (new TextEncoder()).encode(data));
+    console.log("InputStream", data && data.length, this.data.eos, this.data.ready, "Read ", data,  this.encode(data));
   }
 
   this.set_data(data);
