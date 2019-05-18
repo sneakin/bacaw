@@ -7,6 +7,8 @@ buildroot ||= ENV.fetch('BUILDROOT', root.join('build'))
 
 $: << root.parent.join('lib')
 $: << root.join('vendor/rake-node/lib')
+$:.unshift(root.join('vendor/webrick/lib'))
+
 require 'rake/browserify'
 
 NODE_PATH << [ root.join('js', 'lib').to_s,
@@ -59,11 +61,12 @@ html_file buildroot.join('doc/index.html') => [ root.join('www/doc/index.src.htm
 
 desc 'Start a webserver on port 9090 to serve the build directory.'
 task :serve do
-	require 'webrick'
-  $stderr.puts("Serving on #{buildroot}")
-	s = WEBrick::HTTPServer.new(:Port => 9090, :DocumentRoot => buildroot)
-	trap('INT') { s.shutdown }
-	s.start
+  require 'rake-node/http/server'
+  RakeNode::HTTP.run(:Port => 9090,
+                      :DocumentRoot => buildroot,
+                     :SSLCertPrefix => root.join('server'),
+                     :Domain => ENV.fetch('DOMAIN', nil),
+                     :IP => ENV.fetch('IP', nil))
 end
 
 namespace :bacaw do
