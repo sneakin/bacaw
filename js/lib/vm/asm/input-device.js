@@ -49,7 +49,6 @@ function input_asm(asm, input_dev_irq, input_dev_addr)
   asm.label('wait_for_input_sleep').
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(1).
       store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.DS).uint32('waiting_for_input').
-      sie().
       call(0, VM.CPU.REGISTERS.CS).uint32('reset_input').
       sleep().
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).

@@ -1226,7 +1226,7 @@ VM.CPU.INS_DEFS = [
             }
             vm.pop(REGISTERS.IP);
 
-            return sleeping;
+          return sleeping;
         },
         [
             function(vm, ins) {
@@ -1735,14 +1735,15 @@ VM.CPU.INS_DEFS = [
       [ "SLEEP", "Sleeps the CPU.", [],
         function(vm, ins) {
             if(vm.debug) console.log("SLEEP", vm.regread(REGISTERS.STATUS) & VM.CPU.STATUS.SLEEP, vm.cycles);
-            vm.set_status(VM.CPU.STATUS.SLEEP);
+            vm.set_status(VM.CPU.STATUS.SLEEP|VM.CPU.STATUS.INT_ENABLED);
             vm.clear_status(VM.CPU.STATUS.INT_FLAG); // want interrupts to not queue
-            return true;
+          return true;
         },
         function(vm, ins) {
             vm.memwritel(0, vm.encode({op: ins}));
             assert.equal(vm.step(), false, 'causes step to return false');
             assert.assert((vm.regread(REGISTERS.STATUS) & VM.CPU.STATUS.SLEEP) != 0, 'sets the sleep status bit');
+            assert.assert((vm.regread(REGISTERS.STATUS) & VM.CPU.STATUS.INT_ENABLED) != 0, 'sets the interrupt enable bit');
             assert.assert((vm.regread(REGISTERS.STATUS) & VM.CPU.STATUS.INT_FLAG) == 0, 'clears the INT_FLAG bit');
         }
       ],
@@ -2323,9 +2324,9 @@ VM.CPU.prototype.do_step = function()
 
         let i = this.decode(ins);
         if(i) {
-            if(i.call(this, ins) == true) {
-                this.stepping = false;
-                return false;
+          if(i.call(this, ins) == true && this.interrupts_pending() == 0) {
+              this.stepping = false;
+              return false;
             }
         } else {
             this.unknown_op(ins, ip);
@@ -2704,7 +2705,7 @@ VM.CPU.test_suite = function()
     vm.reset();
     vm.enable_interrupts();
     vm.exceptional = false;
-    vm.step();
+    assert.assert(vm.step() == vm, 'wants to keep running');
     assert.assert(vm.interrupts_pending(), 'has an interrupt');
 
     console.log("" + num_tests + " tests ran.");

@@ -23,7 +23,7 @@ function asm_isr(asm, max)
   
   asm.load(VM.CPU.REGISTERS.IP, 0, VM.CPU.REGISTERS.INS).uint32('isr_reset').bytes([0,0]).
       times(max, function(a, n) {
-        a.rti().nop().nop();
+        a.rti().nop().nop().nop();
       });
   return asm;
 }
