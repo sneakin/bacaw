@@ -1,3 +1,5 @@
+// -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 2 -*-
+
 const TextDecoder = require('util/text_decoder');
 const TextEncoder = require('util/text_encoder');
 

@@ -1,3 +1,4 @@
+// -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 2 -*-
 const VERSION = 4;
 
 function DBStore(db_name, callback, version)

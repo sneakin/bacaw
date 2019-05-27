@@ -1,3 +1,4 @@
+// -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 2 -*-
 const TextDecoder = require('util/text_decoder');
 const TextEncoder = require('util/text_encoder');
 
@@ -33,7 +34,7 @@ KV.prototype.pack_key = function(str)
 
 KV.prototype.fetch = function(key, opts)
 {
-  return this._fetch(this.unpack_key(key), opts);
+  return this._fetch.call(global, this.unpack_key(key), opts);
 }
 
 KV.prototype.send_request = function(key, req_opts, callback)
@@ -47,6 +48,7 @@ KV.prototype.send_request = function(key, req_opts, callback)
       callback(key, null);
     }
   }).catch((error) => {
+    console.log("HTTP exception", error);
     callback(key, null);
   });
 }
@@ -83,6 +85,7 @@ KV.prototype.getSize = function(key, callback)
   }).then((response) => {
     callback(this.pack_key(response.url), response.headers['Content-Length']);
   }).catch((error) => {
+    console.log("HTTP exception", error);
     callback(key, null);
   });
 
@@ -96,6 +99,7 @@ KV.prototype.removeItem = function(key, callback)
   }).then((response) => {
     callback(key, response.ok);
   }).catch((error) => {
+    console.log("HTTP exception", error);
     callback(key, null);
   });
 

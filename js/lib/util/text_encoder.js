@@ -15,7 +15,7 @@ TE.prototype.encode = function(str, options)
 
 var TextEncoder = TE;
 if(node_util != null && node_util['TextEncoder']) { TextEncoder = node_util['TextEncoder']; }
-if(typeof(window) != 'undefined' && window['TextEncoder']) { TextEncoder = window['TextEncoder']; }
+if(global['TextEncoder']) { TextEncoder = global['TextEncoder']; }
 
 if(typeof(module) != 'undefined') {
   module.exports = TextEncoder;

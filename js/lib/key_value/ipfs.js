@@ -1,3 +1,5 @@
+// -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 2 -*-
+
 // TODO ipfs passphrase and keys for enable/reset and private key generation
 // TODO storage for ipfs key(s)
 
