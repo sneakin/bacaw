@@ -1,6 +1,9 @@
 // TODO ipfs passphrase and keys for enable/reset and private key generation
 // TODO storage for ipfs key(s)
 
+const TextDecoder = require('util/text_decoder');
+const TextEncoder = require('util/text_encoder');
+
 function KV(ipfs, repo)
 {
   this.ipfs = ipfs || global.IPFS;

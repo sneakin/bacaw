@@ -1,3 +1,6 @@
+const TextDecoder = require('util/text_decoder');
+const TextEncoder = require('util/text_encoder');
+
 function KV(fetch)
 {
   this._fetch = fetch || global.fetch;
