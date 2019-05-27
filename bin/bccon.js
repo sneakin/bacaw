@@ -12,6 +12,9 @@ const RTC = require('vm/devices/rtc');
 const DevConsole = require('vm/devices/console');
 const OutputStream = require('vm/node/devices/output_stream');
 const InputStream = require('vm/node/devices/input_stream');
+const KeyStore = require('vm/devices/keystore.js');
+const KeyValueHTTP = require('key_value/http');
+const Fetch = require('node-fetch');
 
 function vm_init(ram_size)
 {
@@ -51,13 +54,20 @@ function vm_init(ram_size)
     var rtc = new RTC();
     mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
 
+    var http_store = new KeyValueHTTP(Fetch);
+    var http_storage_addr = 0xF000B000;
+    var http_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 10);
+    var http_storage = new KeyStore(http_store, mmu, http_storage_irq);
+    mmu.map_memory(http_storage_addr, http_storage.ram_size(), http_storage);
+  
     vm.add_device(mmu)
           .add_device(cpu)
           .add_device(devcon)
           .add_device(output)
           .add_device(input)
           .add_device(timer)
-          .add_device(rtc);
+          .add_device(rtc)
+          .add_device(http_storage);
 
     vm.info = {
         /*
@@ -83,6 +93,10 @@ function vm_init(ram_size)
         output: {
             addr: output_addr,
             irq: output_irq
+        },
+        http_storage: {
+          addr: http_storage_addr,
+          irq: http_storage_irq.toInt()
         }
     };
 

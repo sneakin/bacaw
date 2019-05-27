@@ -51,7 +51,7 @@ VM.MMU.prototype.memread = function(addr, count)
           //var mem = this.memory_map.gete(a);
           //var inc = mem.value.read(a - mem.start, count, buffer, offset);
           var mem = this.memory_map.get(a);
-          if(mem == null) throw new VM.MMU.NotMappedError(addr);
+          if(mem == null || mem.value == null) throw new VM.MMU.NotMappedError(addr);
             var inc = mem.value.read(a - mem.addr, count, buffer, offset);
             if(inc == 0) break;
             offset += inc - 1;
@@ -219,4 +219,8 @@ VM.MMU.test_suite = function()
   }
   
   return mmu;
+}
+
+if(typeof(module) != 'undefined') {
+	module.exports = VM.MMU;
 }

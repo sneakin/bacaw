@@ -197,6 +197,33 @@ VM.Container.prototype.interrupt = function(n)
     return this;
 }
 
+function InterruptHandle(container, irq)
+{
+  this.container = container;
+  this.irq = irq;
+}
+
+InterruptHandle.prototype.trigger = function()
+{
+  this.container.interrupt(this.irq);
+  return this;
+}
+
+InterruptHandle.prototype.toInt = function()
+{
+  return this.irq;
+}
+
+InterruptHandle.prototype.toString = function(base)
+{
+  return this.irq.toString(base);
+}
+
+VM.Container.prototype.interrupt_handle = function(irq)
+{
+  return new InterruptHandle(this, irq);
+}
+
 VM.Container.prototype.do_callback = function(cb, arg)
 {
     if(this.callbacks == null || this.callbacks[cb] == null) return;

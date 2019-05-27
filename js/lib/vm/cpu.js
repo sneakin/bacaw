@@ -2352,6 +2352,7 @@ VM.CPU.prototype.step = function()
         } else if(e instanceof PagedHash.NotMappedError) {
             this.interrupt(VM.CPU.INTERRUPTS.mem_fault);
         } else {
+          console.log("Ignoring exception", e);
             if(this.exceptional) {
                 throw(e);
             }

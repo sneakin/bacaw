@@ -52,11 +52,12 @@ file buildroot.join('xterm.css') => root.join('node_modules', 'xterm', 'dist', '
 end
 
 BrowserifyRunner.root = root
+BrowserifyRunner.bundle buildroot.join('ipfs.js') => [ root.join('www/ipfs.js') ]
 BrowserifyRunner.bundle buildroot.join('dev.js') => [ root.join('www/dev.js') ]
 BrowserifyRunner.bundle buildroot.join('doc/doc.js') => [ root.join('www/doc/doc.js') ]
 
 html_file buildroot.join('index.html') => [ root.join('www/index.src.html'), buildroot ]
-html_file buildroot.join('dev.html') => [ root.join('www/dev.src.html'), buildroot.join('dev.js'), buildroot ]
+html_file buildroot.join('dev.html') => [ root.join('www/dev.src.html'), buildroot.join('dev.js'), buildroot.join('ipfs.js'), buildroot ]
 html_file buildroot.join('doc/index.html') => [ root.join('www/doc/index.src.html'), buildroot.join('doc/doc.js'), buildroot.join('doc') ]
 
 desc 'Start a webserver on port 9090 to serve the build directory.'

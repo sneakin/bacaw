@@ -200,6 +200,21 @@ function to_hexdump(arr)
     })).join(' ');
 }
 
+function from_hexdump(s)
+{
+  return s.split(/\s+/).map((c) => parseInt(c, 16));
+}
+
+function string_to_hexdump(s)
+{
+  return to_hexdump(s.split('').map((c) => c.charCodeAt(0)));
+}
+
+function string_from_hexdump(s)
+{
+  return from_hexdump(s).reduce((s, c) => s += String.fromCharCode(c), '');
+}
+
 const Exports = {
     map_each: map_each,
     map_each_n: map_each_n,
@@ -207,7 +222,10 @@ const Exports = {
     equals: equals,
     merge_options: merge_options,
     flattenDeep: flattenDeep,
-    to_hexdump: to_hexdump
+    to_hexdump: to_hexdump,
+    from_hexdump: from_hexdump,
+    string_to_hexdump: string_to_hexdump,
+    string_from_hexdump: string_from_hexdump
 };
 
 if(typeof(module) != 'undefined') {

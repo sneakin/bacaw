@@ -6,6 +6,8 @@ const Console = require('vm/devices/console.js');
 const GFX = require('vm/devices/gfx.js');
 const Timer = require('vm/devices/timer.js');
 const RTC = require('vm/devices/rtc.js');
+const KeyStore = require('vm/devices/keystore.js');
+const KeyValue = require('key_value');
 
 var vm, cpu, keyboard;
 var main_window, second_window;
@@ -45,7 +47,7 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     mmu.map_memory(0, mem_size, new RAM(mem_size));
 	  cpu = new VM.CPU(mmu, mem_size);
   
-    var keyboard_irq = VM.CPU.INTERRUPTS.user + 5;
+  var keyboard_irq = VM.CPU.INTERRUPTS.user + 5;
     var keyboard_addr = 0xF0005000;
     keyboard = new Keyboard(main_window, vm, keyboard_irq);
     mmu.map_memory(keyboard_addr, keyboard.ram_size(), keyboard);
@@ -75,14 +77,56 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     var rtc_addr = 0xF0006000;
     var rtc = new RTC();
     mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
-    
+
+    var local_store = new KeyValue.Storage(localStorage);
+    var local_storage_addr = 0xF0007000;
+    var local_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 6);
+    var local_storage = new KeyStore(local_store, mmu, local_storage_irq, 'LocalStorage');
+    mmu.map_memory(local_storage_addr, local_storage.ram_size(), local_storage);
+
+    var session_store = new KeyValue.Storage(sessionStorage);
+    var session_storage_addr = 0xF0008000;
+    var session_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 7);
+    var session_storage = new KeyStore(session_store, mmu, session_storage_irq, 'SessionStorage');
+    mmu.map_memory(session_storage_addr, session_storage.ram_size(), session_storage);
+
+    var db_store = new KeyValue.IDB('bacaw', (state) => { console.log('IDBStore', state); });
+    var db_storage_addr = 0xF0009000;
+    var db_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 8);
+    var db_storage = new KeyStore(db_store, mmu, db_storage_irq, 'IndexedDB Storage');
+    mmu.map_memory(db_storage_addr, db_storage.ram_size(), db_storage);
+
+    var ipfs_store = new KeyValue.IPFS(global.IPFS);
+    var ipfs_storage_addr = 0xF000A000;
+    var ipfs_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 9);
+    var ipfs_storage = new KeyStore(ipfs_store, mmu, ipfs_storage_irq, 'IPFS Storage');
+    mmu.map_memory(ipfs_storage_addr, ipfs_storage.ram_size(), ipfs_storage);
+
+    var http_store = new KeyValue.HTTP(global.fetch);
+    var http_storage_addr = 0xF000B000;
+    var http_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 10);
+    var http_storage = new KeyStore(http_store, mmu, http_storage_irq, "HTTP Storage");
+    mmu.map_memory(http_storage_addr, http_storage.ram_size(), http_storage);
+  
+    var table_store = new KeyValue.Table();
+    var table_storage_addr = 0xF000C000;
+    var table_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 11);
+    var table_storage = new KeyStore(table_store, mmu, table_storage_irq, "Table Storage");
+    mmu.map_memory(table_storage_addr, table_storage.ram_size(), table_storage);
+  
     vm.add_device(mmu)
           .add_device(cpu)
           .add_device(devcon)
           .add_device(keyboard)
           .add_device(video)
           .add_device(timer)
-          .add_device(rtc);
+          .add_device(rtc)
+          .add_device(local_storage)
+        .add_device(session_storage)
+        .add_device(db_storage)
+        .add_device(http_storage)
+        .add_device(ipfs_storage)
+        .add_device(table_storage);
 
   vm.info = {
     gfx: {
@@ -106,6 +150,30 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     },
     rtc: {
       addr: rtc_addr
+    },
+    local_storage: {
+      addr: local_storage_addr,
+      irq: local_storage_irq.toInt()
+    },
+    session_storage: {
+      addr: session_storage_addr,
+      irq: session_storage_irq.toInt()
+    },
+    db_storage: {
+      addr: db_storage_addr,
+      irq: db_storage_irq.toInt()
+    },
+    ipfs_storage: {
+      addr: ipfs_storage_addr,
+      irq: ipfs_storage_irq.toInt()
+    },
+    http_storage: {
+      addr: http_storage_addr,
+      irq: http_storage_irq.toInt()
+    },
+    table_storage: {
+      addr: table_storage_addr,
+      irq: table_storage_irq.toInt()
     }
   };
   
