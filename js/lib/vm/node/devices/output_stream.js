@@ -89,13 +89,15 @@ OutputStream.prototype.flush = function()
 {
   var self = this;
   var bytes = this.data.buffer.slice(0, this.data.flush);
-  var data = this.decode(bytes);
-  
-  var r = this.stream.write(data,
+  // node doesn't always like Uint8Array's
+  if(typeof(Buffer) != 'undefined') {
+    bytes = Buffer.from(bytes);
+  }
+  var r = this.stream.write(bytes,
                             null,
                             function() {
                               if(self.data.flush > 0) {
-                                if(self.debug) console.log("OutputStream flushed", data, bytes);
+                                if(self.debug) console.log("OutputStream flushed", bytes);
                                 self.data.eos = OutputStream.EOSStates.OK;
                                 self.ram.set(0, self.ram.length, 0);
                                 self.trigger_interrupt();
