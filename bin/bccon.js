@@ -157,7 +157,7 @@ if(vm_debugging) {
     });
 }
 
-if(path != null && path != ':forth') {
+if(path != null && path != ':echo') {
     if(vm_debugging) console.log("Loading " + path);
 	  fs.readFile(path, function(err, data) {
 		    if(err) throw err;
@@ -169,14 +169,8 @@ if(path != null && path != ':forth') {
         main_loop(vm, steps, steps != null);
 	  });
 } else {
-    const Forth = require("vm/forth");
-
-    function forth_init(vm)
-    {
-        program_code = Forth.assemble(1024*1024, 0, vm.info);
-        vm.cpu.memwrite(0, program_code);
-    }
-
-	  forth_init(vm);
-    main_loop(vm, steps, steps != null);
+  const BootLoader = require('vm/boot_loader.js');
+  var boot_loader = BootLoader.assemble(1024*1024, 0, vm.info);
+  vm.cpu.memwrite(0, boot_loader);
+  main_loop(vm, steps, steps != null);
 }
