@@ -18,7 +18,7 @@ Worker.register = function(script, location)
   var root = dirname(location.pathname);
   
   return navigator.serviceWorker.register(pathjoin(root, script), {
-    scope: root
+    scope: root + "/"
   }).then((reg) => {
     console.log("Worker registered");
     this.registration = reg;
