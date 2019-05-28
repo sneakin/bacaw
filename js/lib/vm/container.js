@@ -7,6 +7,7 @@ if((typeof(window) != 'undefined' && !window['VM']) ||
 
 require('vm/cpu.js');
 const Console = require('vm/devices/console');
+const InterruptHandle = require('vm/interrupt_handle');
 
 VM.Container = function(callbacks)
 {
@@ -199,28 +200,6 @@ VM.Container.prototype.interrupt = function(n)
     }
 
     return this;
-}
-
-function InterruptHandle(container, irq)
-{
-  this.container = container;
-  this.irq = irq;
-}
-
-InterruptHandle.prototype.trigger = function()
-{
-  this.container.interrupt(this.irq);
-  return this;
-}
-
-InterruptHandle.prototype.toInt = function()
-{
-  return this.irq;
-}
-
-InterruptHandle.prototype.toString = function(base)
-{
-  return this.irq.toString(base);
 }
 
 VM.Container.prototype.interrupt_handle = function(irq)
