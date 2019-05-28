@@ -3,15 +3,6 @@ function Layer(id, canvas, data, w, h, x, y, z, alpha)
     this.canvas = canvas;
     this.data = data;
     var self = this;
-    this.data.addEventListener(function(event) {
-        if(event.detail.view == self.data) {
-            for(var f in event.detail.fields) {
-                var v = event.detail.fields[f];
-                var m = 'on_' + f;
-                if(self[m]) self[m](v, true);
-            }
-        }
-    });
     this.id(id);
     this.width(w);
     this.height(h);
@@ -39,9 +30,6 @@ Layer.add_attr = function(name, setter)
             this.data[name] = v;
         }
         return this.data[name];
-    }
-    Layer.prototype['on_' + name] = function(v) {
-        setter.call(this, [v]);
     }
 }
 

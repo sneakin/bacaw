@@ -18,15 +18,6 @@ function GFX(irq, canvases_for_layers, w, h, mem_size, pixel_width, pixel_height
     this.input_struct = GFX.InputMemory(canvases_for_layers.length, mem_size);
     this.input_data = this.input_struct.proxy(this.input_ram.data_view());
     var self = this;
-    this.input_data.addEventListener(function(event) {
-        if(event.detail.view == self.input_data.view) {
-            for(var f in event.detail.fields) {
-                var v = event.detail.fields[f];
-                var m = 'on_' + f;
-                if(self[m]) self[m](v, true);
-            }
-        }
-    });
     this.layers = util.map_each_n(canvases_for_layers, function(l, n) {
         return new GFX.Layer(n, l, self.input_data.layers[n].view, w, h);
     });

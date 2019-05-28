@@ -94,42 +94,11 @@ DataStruct.Field = function(field_def, number, offset)
     this.byte_size = this.type.byte_size * (this.elements || 1);
 }
 
-function MyEventTarget()
-{
-    try {
-        this.et = new EventTarget();
-    } catch(e) {
-    }
-}
-
-MyEventTarget.prototype.addEventListener = function(event, f)
-{
-    if(this.et) this.et.addEventListener(event, f);
-}
-
-MyEventTarget.prototype.dispatchEvent = function(e)
-{
-    if(this.et) this.et.dispatchEvent(e);
-}
-
-DataStruct.View = function(ds, dv, event_target)
+DataStruct.View = function(ds, dv)
 {
     this.ds = ds;
     this.dv = dv;
     this._proxies = [];
-    this.on_change_eventer = event_target|| (new MyEventTarget());
-}
-
-DataStruct.View.prototype.addEventListener = function(f)
-{
-    this.on_change_eventer.addEventListener('OnChangeEvent', f);
-    return this;
-}
-
-DataStruct.View.prototype.removeEventListener = function(f)
-{
-    this.on_change_eventer.removeEventListener('OnChangeEvent', f);
-    return this;
 }
 
 DataStruct.View.prototype.get_array = function(field)
@@ -142,12 +111,11 @@ DataStruct.View.prototype.get_array = function(field)
                                                      self.dv.byteOffset
                                                      + field.offset
                                                      + field.type.byte_size * n
-                                                    ), self.on_change_eventer);
+                                                    ));
             });
         }
         return this._proxies[field.id];
     } else {
-        // todo how to dispatch an event when the array changes?
         return field.type.proxy(this.dv.buffer, this.dv.byteOffset + field.offset, field.elements);
     }
 }
@@ -166,27 +134,11 @@ DataStruct.View.prototype.get = function(field)
     return null;
 }
 
-DataStruct.OnChangeEvent = function(view, fields)
-{
-    return new CustomEvent('OnChangeEvent', {
-        detail: {
-            view: view,
-            fields: fields
-        }
-    });
-}
-
 DataStruct.View.prototype.set = function(field, value)
 {
     var f = this.ds.fields[field];
     var r = f.type.set(this.dv, f.offset, value, this.ds.endianess);
-    //this.dispatch_change({ [f.name] : this.get(field) });
     return r;
-}
-
-DataStruct.View.prototype.dispatch_change = function(fields)
-{
-    this.on_change_eventer.dispatchEvent(DataStruct.OnChangeEvent(this, fields));
 }
 
 DataStruct.View.prototype.read = function(offset, count, output)
@@ -206,38 +158,6 @@ DataStruct.View.prototype.read = function(offset, count, output)
     }    
 }
 
-DataStruct.View.prototype.dispatch_change_from = function(offset, num_bytes)
-{
-    var fields = this.ds.fields_spanning(offset, num_bytes);
-    var values = {};
-    var num_values = 0;
-    var children = [];
-    var self = this;
-    map_each_n(fields, function(f) {
-        if(f.elements) {
-            children.push(f);
-        } else {
-            values[f.name] = self.get(f.name);
-            num_values++;
-        }
-    });
-    if(num_values > 0) {
-        this.dispatch_change(values);
-    }
-    
-    map_each_n(children, function(c, n) {
-        var proxies = self.get(c.name);
-        for(var i = 0; i < proxies.length; i++) {
-            var proxy_off = (c.offset + c.byte_size * i);
-            if(proxy_off >= offset && proxy_off < (offset + num_bytes)) {
-                proxies[i].view.dispatch_change_from(offset - proxy_off, num_bytes - proxy_off);
-            } else {
-                break;
-            }
-        }
-    });
-}
-
 DataStruct.View.prototype.write = function(offset, data)
 {
     var arr = new Uint8Array(this.dv.buffer, this.dv.byteOffset);
@@ -250,10 +170,6 @@ DataStruct.View.prototype.write = function(offset, data)
 		    arr[offset + i] = data[i];
     }
 
-    if(i > 0) {
-        //this.dispatch_change_from(offset, i);
-    }
-    
     return i;
 }
 
@@ -295,7 +211,7 @@ DataStruct.View.prototype.toString = function()
 
 DataStruct.View.Proxy = {
     get: function(view, prop) {
-        if(prop == Symbol.iterator || (prop.match && prop.match(/^((add|remove)EventListener|read|write|toString|to_object|update_from)$/g) != null)) {
+        if(prop == Symbol.iterator || (prop.match && prop.match(/^(read|write|toString|to_object|update_from)$/g) != null)) {
             return function() {
                 var r = view[prop].apply(view, arguments);
                 if(r === view) {
@@ -318,14 +234,14 @@ DataStruct.View.Proxy = {
     }
 };
 
-DataStruct.prototype.view = function(dv, event_target)
+DataStruct.prototype.view = function(dv)
 {
-    return new DataStruct.View(this, dv, event_target || this.on_change_eventer);
+    return new DataStruct.View(this, dv);
 }
 
-DataStruct.prototype.proxy = function(dv, event_target)
+DataStruct.prototype.proxy = function(dv)
 {
-    var view = this.view(dv, event_target);
+    var view = this.view(dv);
     return new Proxy(view, DataStruct.View.Proxy);
 }
 

@@ -14,17 +14,6 @@ function Console(mem_size)
     this.ram = new RAM(this.data_struct.byte_size);
   this.data = this.data_struct.proxy(this.ram.data_view());
   this.callbacks = [ function(str) { console.log(str); } ];
-    /*
-    // Fixme events aren't being fired in node. Forget if they're used in the browser.
-    var self = this;
-    this.data.addEventListener(function(e) {
-        if(e.detail.view == self.view) {
-            if(e.detail.fields['flush'] != null) {
-                self.flush();
-            }
-        }
-    });
-    */
 }
 
 Console.prototype.ram_size = function()

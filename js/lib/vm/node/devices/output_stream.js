@@ -36,18 +36,6 @@ function OutputStream(stream, mem_size, irq)
       self.set_eos(OutputStream.EOSStates.OK);
     });
   }
-  /*
-  // Fixme events aren't being fired in node. Forget if they're used in the browser.
-  var self = this;
-  this.data.addEventListener(function(e) {
-    console.log("Console data", e);
-    if(e.detail.view == self.view) {
-      if(e.detail.fields['flush'] != null) {
-        self.flush();
-      }
-    }
-  });
-  */
 }
 
 OutputStream.EOSStates = new Enum([
