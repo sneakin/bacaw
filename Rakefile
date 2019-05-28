@@ -18,6 +18,7 @@ outputs = [ 'index.html',
             'index.css',
             'dev.html',
             'dev_style.css',
+            'service_worker.js',
             'doc/index.html',
             'style.css',
             'tabs.css',
@@ -55,6 +56,7 @@ BrowserifyRunner.root = root
 BrowserifyRunner.bundle buildroot.join('ipfs.js') => [ root.join('www/ipfs.js') ]
 BrowserifyRunner.bundle buildroot.join('dev.js') => [ root.join('www/dev.js') ]
 BrowserifyRunner.bundle buildroot.join('doc/doc.js') => [ root.join('www/doc/doc.js') ]
+BrowserifyRunner.bundle buildroot.join('service_worker.js') => [ root.join('www/service_worker.js') ]
 
 html_file buildroot.join('index.html') => [ root.join('www/index.src.html'), buildroot ]
 html_file buildroot.join('dev.html') => [ root.join('www/dev.src.html'), buildroot.join('dev.js'), buildroot.join('ipfs.js'), buildroot ]

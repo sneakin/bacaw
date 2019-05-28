@@ -1,0 +1,13 @@
+{
+  "name": "Bacaw",
+  "short_name": "bacaw",
+  "start_url": "dev.html",
+  "display": "fullscreen",
+  "background_color": "#000",
+  "description": "Bacaw Development Console",
+  "icons": [{
+    "src": "images/icon.png",
+    "sizes": "64x64",
+    "type": "image/png"
+  }]
+}

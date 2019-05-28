@@ -10,10 +10,10 @@ const DeviceList = require('dev/device_list');
 const DevConDisplay = require('dev/dev_con_display');
 const Tabber = require('tabber');
 const FS = require('fs');
+const Terminal = require('vm/devices/terminal');
+const VMWorker = require('vm/service_worker');
 
 const LOAD_OFFSET = 0;
-
-const Terminal = require('vm/devices/terminal');
 
 function AssemblyEditor(vm)
 {
@@ -62,6 +62,14 @@ function dev_init()
         }
     });
 
+  var worker = null;
+  VMWorker.register('service_worker.js', window.location).then((reg) => {
+    worker = reg;
+    console.log("ServiceWorker register", reg);
+  }).catch((error) => {
+    console.log("ServiceWorker failed to register", error);
+  });
+  
     // Hook the widgets' elements
     var register_table = new RegisterTable(document.getElementById('registers'));
     var stack_display = new StackDisplay(document.getElementById('stack'), 128);
