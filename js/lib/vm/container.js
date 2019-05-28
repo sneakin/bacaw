@@ -12,6 +12,7 @@ VM.Container = function(callbacks)
 {
     this.devices = [];
     this.cpu = null;
+    this.mem = null;
     this.mmu = null;
     this.stopping = false;
     this.window = null;
@@ -26,6 +27,9 @@ VM.Container.prototype.add_device = function(dev)
     this.devices.push(dev);
     if(this.cpu == null && dev instanceof VM.CPU) {
         this.cpu = dev;
+    }
+    if(this.mem == null && dev instanceof VM.MemoryBus) {
+        this.mem = dev;
     }
     if(this.mmu == null && dev instanceof VM.MMU) {
         this.mmu = dev;

@@ -12,11 +12,11 @@ const RangedHash = require('vm/ranged_hash.js');
 const DispatchTable = require('vm/dispatch_table.js');
 const assert = require('asserts.js');
 
-VM.CPU = function(mmu, stack_start, max_cycles)
+VM.CPU = function(mem, stack_start, max_cycles)
 {
     this.name = "CPU";
     this.stack_start = stack_start || (1<<16);
-    this.mmu = mmu;
+    this.mem = mem;
 	this._reg = new Uint32Array(VM.CPU.REGISTER_COUNT);
     this._reg_view = new DataView(this._reg.buffer);
     this.cycles = 0;
@@ -2454,53 +2454,53 @@ VM.CPU.prototype.reset = function()
 
 VM.CPU.prototype.map_memory = function(addr, size, responder)
 {
-    this.mmu.map_memory(addr, size, responder);
+    this.mem.map_memory(addr, size, responder);
     return this;
 }
 
 VM.CPU.prototype.memread = function(addr, count)
 {
-    return this.mmu.memread(addr, count);
+    return this.mem.memread(addr, count);
 }
 
 VM.CPU.prototype.memreadl = function(addr)
 {
-    return this.mmu.memreadl(addr);
+    return this.mem.memreadl(addr);
 }
 
 VM.CPU.prototype.memreadL = function(addr)
 {
-    return this.mmu.memreadL(addr);
+    return this.mem.memreadL(addr);
 }
 
 VM.CPU.prototype.memreadS = function(addr)
 {
-    return this.mmu.memreadS(addr);
+    return this.mem.memreadS(addr);
 }
 
 VM.CPU.prototype.memwrite = function(addr, data, type)
 {
-    return this.mmu.memwrite(addr, data, type);
+    return this.mem.memwrite(addr, data, type);
 }
 
 VM.CPU.prototype.memwritel = function(addr, n)
 {
-    return this.mmu.memwritel(addr, n);
+    return this.mem.memwritel(addr, n);
 }
 
 VM.CPU.prototype.memwriteL = function(addr, n)
 {
-    return this.mmu.memwriteL(addr, n);
+    return this.mem.memwriteL(addr, n);
 }
 
 VM.CPU.prototype.memwrites = function(addr, n)
 {
-    return this.mmu.memwrite(addr, n);
+    return this.mem.memwrite(addr, n);
 }
 
 VM.CPU.prototype.memwriteS = function(addr, n)
 {
-    return this.mmu.memwriteS(addr, n);
+    return this.mem.memwriteS(addr, n);
 }
 
 function register_index(reg)
@@ -2682,15 +2682,15 @@ const RAM = require("vm/devices/ram.js");
 VM.CPU.test_suite = function()
 {
     var num_tests = 0;
-    var mmu = new VM.MMU();
+    var mem = new VM.MemoryBus();
     var mem_size = 1<<16;
-	var vm = new VM.CPU(mmu, mem_size);
+	var vm = new VM.CPU(mem, mem_size);
     vm.exceptional = true;
 
     // exercise memread/write's ability to span memory regions
     var split_at = PagedHash.PageSize;
-    mmu.map_memory(0, split_at, new RAM(split_at));
-    mmu.map_memory(split_at, mem_size - split_at, new RAM(mem_size - split_at));
+    mem.map_memory(0, split_at, new RAM(split_at));
+    mem.map_memory(split_at, mem_size - split_at, new RAM(mem_size - split_at));
     var seq = util.n_times(128, function(n) { return n; });
     vm.memwrite(0, seq);
     assert.equal(Array.from(vm.memread(0, seq.length)), seq, 'reads what was written');

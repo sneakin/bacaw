@@ -28,7 +28,7 @@ function DeviceList(parent, vm)
 
 DeviceList.prototype.add_device = function(vm, dev, n)
 {
-    addr = vm.mmu.start_address_for(dev);
+    addr = vm.mem.start_address_for(dev);
     this.elements[n] = new DeviceInfo(this.list, dev, addr);
 }
 

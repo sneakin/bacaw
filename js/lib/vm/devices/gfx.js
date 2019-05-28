@@ -10,10 +10,9 @@ const PixelBuffer = require("vm/devices/gfx/pixel_buffer");
 const Layer = require("vm/devices/gfx/layer");
 const Command = require("vm/devices/gfx/command");
 
-function GFX(vm, irq, canvases_for_layers, w, h, mem_size, pixel_width, pixel_height, img_srcs)
+function GFX(irq, canvases_for_layers, w, h, mem_size, pixel_width, pixel_height, img_srcs)
 {
     this.name = "GFX";
-    this.vm = vm;
     this.mem_size = mem_size;
     this.input_ram = new RAM(mem_size);
     this.input_struct = GFX.InputMemory(canvases_for_layers.length, mem_size);
@@ -446,7 +445,7 @@ GFX.prototype.step = function()
 GFX.prototype.trigger_interrupt = function()
 {
     if(this.debug) console.log("GFX trigger interrupt");
-    if(this.vm) this.vm.interrupt(this.irq);
+    this.irq.trigger();
 }
 
 GFX.prototype.step_anim = function()

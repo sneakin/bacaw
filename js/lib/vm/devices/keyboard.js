@@ -4,14 +4,13 @@ const Enum = require('enum.js');
 const RingBuffer = require('vm/ring_buffer.js');
 const RAM = require('vm/devices/ram.js');
 
-function Keyboard(el, vm, irq)
+function Keyboard(el, irq)
 {
   this.name = "Keyboard";
     this.running = false;
     this.focused = false;
     this.element = el;
     
-    this.vm = vm;
     this.irq = irq;
     this.ram = new RAM(Keyboard.MemoryStruct_16.byte_size);
     this.mem = Keyboard.MemoryStruct_16.proxy(this.ram.data_view());
@@ -136,7 +135,7 @@ Keyboard.prototype.on_key = function(pressed, ev)
 
   this.buffer.push(kb_ev);
   // todo beep if the buffer is full?
-  this.vm.interrupt(this.irq);
+  this.irq.trigger();
 }
 
 Keyboard.prototype.read = function(addr, count, output, offset)

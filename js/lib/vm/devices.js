@@ -4,6 +4,7 @@ if((typeof(window) != 'undefined' && !window['VM']) ||
 }
 
 require('vm/devices/ram.js');
+require('vm/devices/memory_bus.js');
 require('vm/devices/mmu.js');
 require('vm/devices/console.js');
 require('vm/devices/gfx.js');

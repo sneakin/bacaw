@@ -7,14 +7,13 @@ require('vm/types.js');
 
 const TextDecoder = require('util/text_decoder');
 
-function OutputStream(stream, mem_size, vm, irq)
+function OutputStream(stream, mem_size, irq)
 {
   mem_size = mem_size || 1024;
 
   this.name = "OutputStream";
   this.stream = stream;
   this.irq = irq;
-  this.vm = vm;
   
   this.data_struct = new DataStruct([
     [ 'eos', VM.TYPES.ULONG ],
@@ -60,9 +59,7 @@ OutputStream.EOSStates = new Enum([
 
 OutputStream.prototype.trigger_interrupt = function()
 {
-  if(this.irq) {
-    this.vm.interrupt(this.irq);
-  }
+  this.irq.trigger();
 }
 
 OutputStream.prototype.set_eos = function(state)

@@ -7,12 +7,11 @@ require('vm/types.js');
 
 const TextEncoder = require('util/text_encoder');
 
-function InputStream(stream, mem_size, vm, irq)
+function InputStream(stream, mem_size, irq)
 {
   mem_size = mem_size || 1024;
 
   this.name = "InputStream";
-  this.vm = vm;
   this.stream = stream;
   this.irq = irq;
   
@@ -48,9 +47,7 @@ function InputStream(stream, mem_size, vm, irq)
 
 InputStream.prototype.trigger_interrupt = function()
 {
-  if(this.irq) {
-    this.vm.interrupt(this.irq);
-  }
+  this.irq.trigger();
 }
 
 InputStream.prototype.encode = function(data)
