@@ -48,13 +48,8 @@ RTC.prototype.ram_size = function()
 
 RTC.prototype.read = function(addr, count, output, offset)
 {
-    return this.input_ram.read(addr, count, output, offset);
-}
-
-RTC.prototype.read1 = function(addr, type)
-{
     this.update();
-    return this.input_ram.read1(addr, type);
+    return this.input_ram.read(addr, count, output, offset);
 }
 
 RTC.prototype.update = function()

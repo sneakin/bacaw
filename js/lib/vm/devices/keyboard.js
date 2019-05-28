@@ -143,19 +143,9 @@ Keyboard.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
-Keyboard.prototype.read1 = function(addr, type)
-{
-    return this.ram.read1(addr, type);
-}
-
 Keyboard.prototype.write = function(addr, data)
 {
     return this.ram.write(addr, data);
-}
-
-Keyboard.prototype.write1 = function(addr, value, type)
-{
-    return this.ram.write1(addr, value, type);
 }
 
 Keyboard.prototype.ram_size = function()

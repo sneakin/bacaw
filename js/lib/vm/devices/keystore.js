@@ -71,11 +71,6 @@ KeyStore.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
-KeyStore.prototype.read1 = function(addr, type)
-{
-    return this.ram.read1(addr, type);
-}
-
 KeyStore.prototype.read_key = function()
 {
   return this.memory.memread(this.state.key, this.state.key_size);
@@ -238,12 +233,6 @@ KeyStore.prototype.write = function(addr, data)
   var n = this.ram.write(addr, data);
   if(in_range(this.state.ds.fields.command.offset, addr, addr + data.length)) this.process_command();
   return n;
-}
-
-KeyStore.prototype.write1 = function(addr, value, type)
-{
-  this.ram.write1(addr, value, type);
-  if(addr == this.state.ds.fields.command.offset) this.process_command();
 }
 
 if(typeof(module) != 'undefined') {

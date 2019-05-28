@@ -73,14 +73,9 @@ VM.MemoryBus.prototype.memread1 = function(addr, type)
   var mem = this.memory_map.get(addr);
   if(mem == null) throw new VM.MemoryBus.NotMappedError(addr);
   
-  var real_addr = addr - mem.addr;
-  if(real_addr < (mem.size - type.byte_size)) {
-    return mem.value.read1(real_addr, type);
-  } else {
-    var out = this.memread(addr, type.byte_size);
-    var dv = new DataView(out.buffer, out.byteOffset);
-    return type.get(dv, 0, true);
-  }
+  var out = this.memread(addr, type.byte_size);
+  var dv = new DataView(out.buffer, out.byteOffset);
+  return type.get(dv, 0, true);
 }
 
 VM.MemoryBus.prototype.memreadl = function(addr)
@@ -129,15 +124,10 @@ VM.MemoryBus.prototype.memwrite1 = function(addr, value, type)
   var mem = this.memory_map.get(addr);
   if(mem == null) throw new VM.MemoryBus.NotMappedError(addr);
 
-  var real_addr = addr - mem.addr;
-  if(real_addr < (mem.size - type.byte_size)) {
-    return mem.value.write1(real_addr, value, type);
-  } else {
-    var bytes = new Uint8Array(type.byte_size);
-    var dv = new DataView(bytes.buffer);
-    type.set(dv, 0, value, true);
-    return this.memwrite(addr, bytes);
-  }
+  var bytes = new Uint8Array(type.byte_size);
+  var dv = new DataView(bytes.buffer);
+  type.set(dv, 0, value, true);
+  return this.memwrite(addr, bytes);
 }
 
 VM.MemoryBus.prototype.memwritel = function(addr, n)

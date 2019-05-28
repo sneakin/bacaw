@@ -19,23 +19,6 @@ RAM.prototype.data_view = function(offset)
     return new DataView(this._data.buffer, this._data.byteOffset + (offset || 0));
 }
 
-RAM.prototype.read1 = function(addr, type)
-{
-    if(type == null) type = VM.TYPES.ULONG;
-    else if(typeof(type) == 'string') type = VM.TYPES[count];
-
-    return type.get(this._view, addr, true);
-}
-
-RAM.prototype.write1 = function(addr, value, type)
-{
-    if(type == null) type = VM.TYPES.ULONG;
-    else if(typeof(type) == 'string') type = VM.TYPES[count];
-
-    type.set(this._view, addr, value, true);
-    return addr + type.byte_size;
-}
-
 RAM.prototype.read = function(addr, count, output, offset)
 {
     if(output) {

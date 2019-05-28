@@ -55,21 +55,9 @@ Timer.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
-Timer.prototype.read1 = function(addr, type)
-{
-    return this.ram.read1(addr, type);
-}
-
 Timer.prototype.write = function(addr, data)
 {
     var n = this.ram.write(addr, data);
-    this.step();
-    return n;
-}
-
-Timer.prototype.write1 = function(addr, value, type)
-{
-    var n = this.ram.write1(addr, value, data);
     this.step();
     return n;
 }
