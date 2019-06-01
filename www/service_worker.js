@@ -52,11 +52,10 @@ self.addEventListener('fetch', (event) => {
         });
         return response;
       }).catch((error) => {
-        var r = new Response('' + error.code + ': ' + error.message, {
+        return new Response('' + error.code + ': ' + error.message, {
           status: 404,
           statusText: 'Not found'
         })
-        return caches.match(NotFound);
       });
     }
   }));
