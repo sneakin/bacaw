@@ -65,7 +65,7 @@ html_file buildroot.join('doc/index.html') => [ root.join('www/doc/index.src.htm
 desc 'Start a webserver on port 9090 to serve the build directory.'
 task :serve do
   require 'rake-node/http/server'
-  RakeNode::HTTP.run(:Port => 9090,
+  RakeNode::HTTP.run(:Port => ENV.fetch('PORT', 9090).to_i,
                       :DocumentRoot => buildroot,
                      :SSLCertPrefix => root.join('server'),
                      :Domain => ENV.fetch('DOMAIN', nil),
