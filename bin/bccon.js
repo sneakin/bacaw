@@ -22,45 +22,45 @@ function vm_init(ram_size)
     
     vm = new VM.Container();
 
-    var mmu = new VM.MMU();
-    var cpu = new VM.CPU(mmu, ram_size);
-    mmu.map_memory(0x0, ram_size, new RAM(ram_size));
+    var mem = new VM.MemoryBus();
+    var cpu = new VM.CPU(mem, ram_size);
+    mem.map_memory(0x0, ram_size, new RAM(ram_size));
 
     var devcon_addr = 0xF0001000;
     var devcon = new DevConsole();
-    mmu.map_memory(devcon_addr, devcon.ram_size(), devcon);
+    mem.map_memory(devcon_addr, devcon.ram_size(), devcon);
 
-    var output_irq = VM.CPU.INTERRUPTS.user + 3;
+    var output_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 3);
     var output_addr = 0xF0003000;
-    var output = new OutputStream(process.stdout, null, vm, output_irq);
-    mmu.map_memory(output_addr, output.ram_size(), output);
+    var output = new OutputStream(process.stdout, null, output_irq);
+    mem.map_memory(output_addr, output.ram_size(), output);
 
-    var input_irq = VM.CPU.INTERRUPTS.user + 4;
+    var input_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 4);
     var input_addr = 0xF0004000;
-    var input = new InputStream(process.stdin, null, vm, input_irq);
-    mmu.map_memory(input_addr, input.ram_size(), input);
+    var input = new InputStream(process.stdin, null, input_irq);
+    mem.map_memory(input_addr, input.ram_size(), input);
 
-    var stderr_irq = VM.CPU.INTERRUPTS.user + 5;
+    var stderr_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 5);
     var stderr_addr = 0xF0005000;
-    var stderr = new OutputStream(process.stderr, null, vm, stderr_irq);
-    mmu.map_memory(stderr_addr, stderr.ram_size(), stderr);
+    var stderr = new OutputStream(process.stderr, null, stderr_irq);
+    mem.map_memory(stderr_addr, stderr.ram_size(), stderr);
 
     var timer_addr = 0xF0002000;
-    var timer_irq = VM.CPU.INTERRUPTS.user + 2;
-    var timer = new Timer(vm, timer_irq, 1<<20);
-    mmu.map_memory(timer_addr, timer.ram_size(), timer);
+    var timer_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 2);
+    var timer = new Timer(timer_irq, 1<<20);
+    mem.map_memory(timer_addr, timer.ram_size(), timer);
 
     var rtc_addr = 0xF0006000;
     var rtc = new RTC();
-    mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
+    mem.map_memory(rtc_addr, rtc.ram_size(), rtc);
 
     var http_store = new KeyValueHTTP(Fetch);
     var http_storage_addr = 0xF000B000;
     var http_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 10);
-    var http_storage = new KeyStore(http_store, mmu, http_storage_irq);
-    mmu.map_memory(http_storage_addr, http_storage.ram_size(), http_storage);
+    var http_storage = new KeyStore(http_store, mem, http_storage_irq);
+    mem.map_memory(http_storage_addr, http_storage.ram_size(), http_storage);
   
-    vm.add_device(mmu)
+    vm.add_device(mem)
           .add_device(cpu)
           .add_device(devcon)
           .add_device(output)
