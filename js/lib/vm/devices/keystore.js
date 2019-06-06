@@ -190,7 +190,7 @@ KeyStore.Commands[KeyStore.Command.STAT] = function()
 
 KeyStore.Commands[KeyStore.Command.ENABLE] = function()
 {
-  if(this.state.status != KeyStore.Status.NONE) return this;
+  if(this.state.status == KeyStore.Status.BUSY) return this;
   this.state.status = KeyStore.Status.BUSY;
 
   this.storage.enable((err) => {
