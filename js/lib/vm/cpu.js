@@ -2345,7 +2345,7 @@ VM.CPU.prototype.step = function()
         this.stepping = false;
         if(e == DispatchTable.UnknownKeyError) {
             this.unknown_op(this.regread('ins'), this.regread(REGISTERS.IP));
-        } else if(e instanceof VM.MMU.NotMappedError) {
+        } else if(e instanceof VM.MemoryBus.NotMappedError) {
             this.interrupt(VM.CPU.INTERRUPTS.mem_fault);
         } else if(e instanceof RangedHash.InvalidAddressError) {
             this.interrupt(VM.CPU.INTERRUPTS.mem_fault);

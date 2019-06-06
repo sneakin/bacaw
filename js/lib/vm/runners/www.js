@@ -1,3 +1,5 @@
+// -*- mode: JavaScript; coding: utf-8-unix; javascript-indent-level: 4 -*-
+
 const util = require('util.js');
 const vmjs = require('vm.js');
 const RAM = require('vm/devices/ram.js');
