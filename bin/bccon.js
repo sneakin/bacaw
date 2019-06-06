@@ -14,6 +14,7 @@ const OutputStream = require('vm/node/devices/output_stream');
 const InputStream = require('vm/node/devices/input_stream');
 const KeyStore = require('vm/devices/keystore.js');
 const KeyValueHTTP = require('key_value/http');
+const KeyValueFS = require('key_value/file_system');
 const Fetch = require('node-fetch');
 
 function vm_init(ram_size)
@@ -60,6 +61,12 @@ function vm_init(ram_size)
     var http_storage = new KeyStore(http_store, mem, http_storage_irq);
     mem.map_memory(http_storage_addr, http_storage.ram_size(), http_storage);
   
+    var fs_store = new KeyValueFS(Fetch);
+    var fs_storage_addr = 0xF000D000;
+    var fs_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 12);
+    var fs_storage = new KeyStore(fs_store, mem, fs_storage_irq);
+    mem.map_memory(fs_storage_addr, fs_storage.ram_size(), fs_storage);
+  
     vm.add_device(mem)
           .add_device(cpu)
           .add_device(devcon)
@@ -67,7 +74,8 @@ function vm_init(ram_size)
           .add_device(input)
           .add_device(timer)
           .add_device(rtc)
-          .add_device(http_storage);
+          .add_device(http_storage)
+          .add_device(fs_storage);
 
     vm.info = {
         /*
@@ -97,6 +105,10 @@ function vm_init(ram_size)
         http_storage: {
           addr: http_storage_addr,
           irq: http_storage_irq.toInt()
+        },
+        fs_storage: {
+          addr: fs_storage_addr,
+          irq: fs_storage_irq.toInt()
         }
     };
 
