@@ -18,13 +18,16 @@ outputs = [ 'index.html',
             'index.css',
             'dev.html',
             'dev_style.css',
+            'sounds/startup.mp3',
             'service_worker.js',
             'doc/index.html',
             'style.css',
             'tabs.css',
             'xterm.css',
             'images/unscii-8.png',
-            'images/unscii-16.png'
+            'images/unscii-16.png',
+            'test.html',
+            'test.js'
           ].collect do |src|
   buildroot.join(src)
 end
@@ -32,13 +35,15 @@ end
 directory buildroot
 directory buildroot.join('doc') => buildroot
 directory buildroot.join('images') => buildroot
+directory buildroot.join('sounds') => buildroot
 
 [ 'style.css',
   'tabs.css',
   'dev_style.css',
   'index.css',
   'images/unscii-8.png',
-  'images/unscii-16.png'
+  'images/unscii-16.png',
+  'sounds/startup.mp3',
 ].each do |name|
   output = buildroot.join(name)
   src = root.join('www', name)
@@ -61,6 +66,9 @@ BrowserifyRunner.bundle buildroot.join('service_worker.js') => [ root.join('www/
 html_file buildroot.join('index.html') => [ root.join('www/index.src.html'), buildroot ]
 html_file buildroot.join('dev.html') => [ root.join('www/dev.src.html'), buildroot.join('dev.js'), buildroot.join('ipfs.js'), buildroot ]
 html_file buildroot.join('doc/index.html') => [ root.join('www/doc/index.src.html'), buildroot.join('doc/doc.js'), buildroot.join('doc') ]
+
+BrowserifyRunner.bundle buildroot.join('test.js') => [ root.join('www/test.js') ]
+html_file buildroot.join('test.html') => [ root.join('www/test.src.html'), buildroot.join('test.js'), buildroot.join('dev.js'), buildroot.join('ipfs.js'), buildroot ]
 
 desc 'Start a webserver on port 9090 to serve the build directory.'
 task :serve do

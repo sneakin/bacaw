@@ -10,6 +10,7 @@ const Timer = require('vm/devices/timer.js');
 const RTC = require('vm/devices/rtc.js');
 const KeyStore = require('vm/devices/keystore.js');
 const KeyValue = require('key_value');
+const Sound = require("vm/devices/sound.js");
 
 var vm, cpu, keyboard;
 var main_window, second_window;
@@ -117,7 +118,12 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     var table_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 11);
     var table_storage = new KeyStore(table_store, mem, table_storage_irq, "Table Storage");
     mem.map_memory(table_storage_addr, table_storage.ram_size(), table_storage);
-  
+
+    var sound_addr = 0xF000D000;
+    var sound_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 12);
+    var sound = new Sound(32, mem, sound_irq, "Sound");
+    mem.map_memory(sound_addr, sound.ram_size(), sound);
+    
     vm.add_device(mem)
           .add_device(cpu)
       //.add_device(cpu2)
@@ -131,7 +137,8 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
         .add_device(db_storage)
         .add_device(http_storage)
         .add_device(ipfs_storage)
-        .add_device(table_storage);
+          .add_device(table_storage)
+          .add_device(sound);
 
   vm.info = {
     gfx: {
@@ -179,7 +186,11 @@ function runner_init(width, height, load_offset, mem_size, callbacks)
     table_storage: {
       addr: table_storage_addr,
       irq: table_storage_irq.toInt()
-    }
+    },
+      sound: {
+          addr: sound_addr,
+          irq: sound_irq.toInt()
+      }
   };
   
   return vm;

@@ -93,6 +93,11 @@ VM.MemoryBus.prototype.memreadS = function(addr)
     return this.memread1(addr, VM.TYPES.USHORT);
 }
 
+VM.MemoryBus.prototype.memreadf = function(addr)
+{
+    return this.memread1(addr, VM.TYPES.FLOAT);
+}
+
 VM.MemoryBus.prototype.memwrite = function(addr, data, type)
 {
     if(type) {
@@ -148,6 +153,11 @@ VM.MemoryBus.prototype.memwrites = function(addr, n)
 VM.MemoryBus.prototype.memwriteS = function(addr, n)
 {
     return this.memwrite1(addr, n, VM.TYPES.USHORT);
+}
+
+VM.MemoryBus.prototype.memwritef = function(addr, n)
+{
+    return this.memwrite1(addr, n, VM.TYPES.FLOAT);
 }
 
 VM.MemoryBus.prototype.save_state = function()
