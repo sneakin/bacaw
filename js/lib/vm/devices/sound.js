@@ -275,11 +275,12 @@ Sound.prototype.update_gain = function()
 
 Sound.prototype.step = function()
 {
-    if(this.context == null) return false;
-    this.state.current_time = Math.floor(this.context.currentTime * 1000);
+    if(this.context) this.state.current_time = Math.floor(this.context.currentTime * 1000);
     if(!this.dirty) return false;
     
     this.update_status();
+    if(this.context == null) return false;
+
     this.update_gain();
     this.update_sampler();
     more_util.n_times(this.num_channels, (n) => this.step_channel(n));
