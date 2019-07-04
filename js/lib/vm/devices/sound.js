@@ -17,7 +17,11 @@ function Sound(num_channels, mem, irq, name)
     this.irq = irq;
     this.num_channels = num_channels;
     this.channels = more_util.n_times(num_channels, (n) => new Channel({
-        onended: () => { this.irq.trigger(); }
+        onended: () => {
+            if(this.state.status & Sound.Status.irq_enabled) {
+                this.irq.trigger();
+            }
+        }
     }));
     this.struct = Sound.DeviceStruct(num_channels);
     this.ram = new RAM(this.struct.byte_size);
@@ -79,6 +83,7 @@ Sound.Status = new Enum([
     [ 'enabled', 1 ],
     [ 'playing', 2 ],
     [ 'demo', 4 ],
+    [ 'irq_enabled', 8 ]
     [ 'error', 0x80 ]
 ]);
 

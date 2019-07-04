@@ -14,7 +14,7 @@ RawSample.prototype.copy_sample = function(mem, addr, length)
 {
   var data = this.buffer.getChannelData(0);
   var type = this.format_type();
-  
+
   for(var i = 0; i < length / type.byte_size; i++) {
     data[i] = mem.memread1(addr + i * type.byte_size, type) / type.max;
   }
