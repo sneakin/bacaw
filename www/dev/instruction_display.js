@@ -105,9 +105,9 @@ InstructionDisplay.prototype.update_rows = function()
 InstructionDisplay.prototype.read_op = function(addr)
 {
     try {
-        return this.vm.mmu.memreadS(addr);
+        return this.vm.mem.memreadS(addr);
     } catch(e) {
-        if(!(e instanceof VM.MMU.NotMappedError)) throw(e);
+        if(!(e instanceof VM.MemoryBus.NotMappedError)) throw(e);
         return 0;
     }
 }
@@ -152,9 +152,9 @@ InstructionDisplay.prototype.op_has_data = function(op)
 InstructionDisplay.prototype.read_data = function(addr, type)
 {
     try {
-        return this.vm.mmu.memread(addr, type);
+        return this.vm.mem.memread(addr, type);
     } catch(e) {
-        if(!(e instanceof VM.MMU.NotMappedError)) throw(e);
+        if(!(e instanceof VM.MemoryBus.NotMappedError)) throw(e);
         return 0;
     }
 }

@@ -45,19 +45,9 @@ PixelBuffer.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
-PixelBuffer.prototype.read1 = function(addr, type)
-{
-    return this.ram.read1(addr, type);
-}
-
 PixelBuffer.prototype.write = function(addr, data)
 {
     return this.ram.write(addr, data);
-}
-
-PixelBuffer.prototype.write1 = function(addr, data, type)
-{
-    return this.ram.write1(addr, data, type);
 }
 
 if(typeof(module) != 'undefined') {

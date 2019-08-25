@@ -7,14 +7,13 @@ require('vm/types.js');
 
 const TextDecoder = require('util/text_decoder');
 
-function OutputStream(stream, mem_size, vm, irq)
+function OutputStream(stream, mem_size, irq)
 {
   mem_size = mem_size || 1024;
 
   this.name = "OutputStream";
   this.stream = stream;
   this.irq = irq;
-  this.vm = vm;
   
   this.data_struct = new DataStruct([
     [ 'eos', VM.TYPES.ULONG ],
@@ -37,18 +36,6 @@ function OutputStream(stream, mem_size, vm, irq)
       self.set_eos(OutputStream.EOSStates.OK);
     });
   }
-  /*
-  // Fixme events aren't being fired in node. Forget if they're used in the browser.
-  var self = this;
-  this.data.addEventListener(function(e) {
-    console.log("Console data", e);
-    if(e.detail.view == self.view) {
-      if(e.detail.fields['flush'] != null) {
-        self.flush();
-      }
-    }
-  });
-  */
 }
 
 OutputStream.EOSStates = new Enum([
@@ -60,9 +47,7 @@ OutputStream.EOSStates = new Enum([
 
 OutputStream.prototype.trigger_interrupt = function()
 {
-  if(this.irq) {
-    this.vm.interrupt(this.irq);
-  }
+  this.irq.trigger();
 }
 
 OutputStream.prototype.set_eos = function(state)
@@ -115,11 +100,6 @@ OutputStream.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
-OutputStream.prototype.read1 = function(addr, type)
-{
-    return this.ram.read1(addr, type);
-}
-
 OutputStream.prototype.write = function(addr, data)
 {
   var n = this.ram.write(addr, data);
@@ -130,18 +110,6 @@ OutputStream.prototype.write = function(addr, data)
   }
 
   return n;
-}
-
-OutputStream.prototype.write1 = function(addr, data, type)
-{
-    var n = this.ram.write1(addr, data, type);
-    if(addr == this.data.ds.fields['flush'].offset && this.data.flush > 0) {
-        this.flush();
-    } else if(addr == this.data.ds.fields['cmd'].offset) {
-        this.process_cmd();
-    }
-
-    return n;
 }
 
 OutputStream.prototype.process_cmd = function()

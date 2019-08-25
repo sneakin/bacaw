@@ -10,24 +10,14 @@ const PixelBuffer = require("vm/devices/gfx/pixel_buffer");
 const Layer = require("vm/devices/gfx/layer");
 const Command = require("vm/devices/gfx/command");
 
-function GFX(vm, irq, canvases_for_layers, w, h, mem_size, pixel_width, pixel_height, img_srcs)
+function GFX(irq, canvases_for_layers, w, h, mem_size, pixel_width, pixel_height, img_srcs)
 {
     this.name = "GFX";
-    this.vm = vm;
     this.mem_size = mem_size;
     this.input_ram = new RAM(mem_size);
     this.input_struct = GFX.InputMemory(canvases_for_layers.length, mem_size);
     this.input_data = this.input_struct.proxy(this.input_ram.data_view());
     var self = this;
-    this.input_data.addEventListener(function(event) {
-        if(event.detail.view == self.input_data.view) {
-            for(var f in event.detail.fields) {
-                var v = event.detail.fields[f];
-                var m = 'on_' + f;
-                if(self[m]) self[m](v, true);
-            }
-        }
-    });
     this.layers = util.map_each_n(canvases_for_layers, function(l, n) {
         return new GFX.Layer(n, l, self.input_data.layers[n].view, w, h);
     });
@@ -446,7 +436,7 @@ GFX.prototype.step = function()
 GFX.prototype.trigger_interrupt = function()
 {
     if(this.debug) console.log("GFX trigger interrupt");
-    if(this.vm) this.vm.interrupt(this.irq);
+    this.irq.trigger();
 }
 
 GFX.prototype.step_anim = function()
@@ -505,15 +495,6 @@ GFX.prototype.read = function(addr, count, output, offset)
     }
 }
 
-GFX.prototype.read1 = function(addr, type)
-{
-    if(addr < this.input_ram.length) {
-        return this.input_ram.read1(addr, type);
-    } else {
-        return this.pixel_buffer.read1(addr - this.input_ram.length, type);
-    }
-}
-
 GFX.prototype.write = function(addr, data)
 {
     var n;
@@ -528,22 +509,6 @@ GFX.prototype.write = function(addr, data)
 
     return n;
 }
-
-GFX.prototype.write1 = function(addr, value, type)
-{
-    var n;
-    if(addr < this.input_ram.length) {
-        n = this.input_ram.write1(addr, value, type);
-        if(addr == this.input_struct.fields.swap.offset) {
-            this.swap_buffers();
-        }
-    } else {
-        n = this.pixel_buffer.write1(addr - this.input_ram.length, value, type);
-    }
-
-    return n;
-}
-
 
 GFX.prototype.write_error = function(err, offset)
 {

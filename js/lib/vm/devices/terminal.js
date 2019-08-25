@@ -164,9 +164,9 @@ Terminal.prototype.get_readable = function()
     return new Terminal.Readable(this);
 }
 
-Terminal.prototype.get_input_device = function(mem_size, vm, irq)
+Terminal.prototype.get_input_device = function(mem_size, irq)
 {
-    return new InputStream(this.get_readable(), mem_size, vm, irq);
+    return new InputStream(this.get_readable(), mem_size, irq);
 }
 
 Terminal.prototype.get_writable = function()
@@ -174,9 +174,9 @@ Terminal.prototype.get_writable = function()
     return new Terminal.Writable(this);
 }
 
-Terminal.prototype.get_output_device = function(mem_size, vm, irq)
+Terminal.prototype.get_output_device = function(mem_size, irq)
 {
-    return new OutputStream(this.get_writable(), mem_size, vm, irq);
+    return new OutputStream(this.get_writable(), mem_size, irq);
 }
 
 Terminal.prototype.clear = function()

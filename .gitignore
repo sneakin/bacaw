@@ -10,3 +10,6 @@ build
 *.lib
 node_modules
 .deps.rake
+server.crt
+server.key
+

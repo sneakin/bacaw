@@ -231,7 +231,6 @@ const Exports = {
     flattenDeep: flattenDeep,
     to_hexdump: to_hexdump,
     from_hexdump: from_hexdump,
-    string_to_hexdump: string_to_hexdump,
   string_from_hexdump: string_from_hexdump,
   counter: counter
 };

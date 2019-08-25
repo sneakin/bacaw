@@ -12,6 +12,10 @@ const RTC = require('vm/devices/rtc');
 const DevConsole = require('vm/devices/console');
 const OutputStream = require('vm/node/devices/output_stream');
 const InputStream = require('vm/node/devices/input_stream');
+const KeyStore = require('vm/devices/keystore.js');
+const KeyValueHTTP = require('key_value/http');
+const KeyValueFS = require('key_value/file_system');
+const Fetch = require('node-fetch');
 
 function vm_init(ram_size)
 {
@@ -19,45 +23,59 @@ function vm_init(ram_size)
     
     vm = new VM.Container();
 
-    var mmu = new VM.MMU();
-    var cpu = new VM.CPU(mmu, ram_size);
-    mmu.map_memory(0x0, ram_size, new RAM(ram_size));
+    var mem = new VM.MemoryBus();
+    var cpu = new VM.CPU(mem, ram_size);
+    mem.map_memory(0x0, ram_size, new RAM(ram_size));
 
     var devcon_addr = 0xF0001000;
     var devcon = new DevConsole();
-    mmu.map_memory(devcon_addr, devcon.ram_size(), devcon);
+    mem.map_memory(devcon_addr, devcon.ram_size(), devcon);
 
-    var output_irq = VM.CPU.INTERRUPTS.user + 3;
+    var output_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 3);
     var output_addr = 0xF0003000;
-    var output = new OutputStream(process.stdout, null, vm, output_irq);
-    mmu.map_memory(output_addr, output.ram_size(), output);
+    var output = new OutputStream(process.stdout, null, output_irq);
+    mem.map_memory(output_addr, output.ram_size(), output);
 
-    var input_irq = VM.CPU.INTERRUPTS.user + 4;
+    var input_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 4);
     var input_addr = 0xF0004000;
-    var input = new InputStream(process.stdin, null, vm, input_irq);
-    mmu.map_memory(input_addr, input.ram_size(), input);
+    var input = new InputStream(process.stdin, null, input_irq);
+    mem.map_memory(input_addr, input.ram_size(), input);
 
-    var stderr_irq = VM.CPU.INTERRUPTS.user + 5;
+    var stderr_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 5);
     var stderr_addr = 0xF0005000;
-    var stderr = new OutputStream(process.stderr, null, vm, stderr_irq);
-    mmu.map_memory(stderr_addr, stderr.ram_size(), stderr);
+    var stderr = new OutputStream(process.stderr, null, stderr_irq);
+    mem.map_memory(stderr_addr, stderr.ram_size(), stderr);
 
     var timer_addr = 0xF0002000;
-    var timer_irq = VM.CPU.INTERRUPTS.user + 2;
-    var timer = new Timer(vm, timer_irq, 1<<20);
-    mmu.map_memory(timer_addr, timer.ram_size(), timer);
+    var timer_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 2);
+    var timer = new Timer(timer_irq, 1<<20);
+    mem.map_memory(timer_addr, timer.ram_size(), timer);
 
     var rtc_addr = 0xF0006000;
     var rtc = new RTC();
-    mmu.map_memory(rtc_addr, rtc.ram_size(), rtc);
+    mem.map_memory(rtc_addr, rtc.ram_size(), rtc);
 
-    vm.add_device(mmu)
+    var http_store = new KeyValueHTTP(Fetch);
+    var http_storage_addr = 0xF000B000;
+    var http_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 10);
+    var http_storage = new KeyStore(http_store, mem, http_storage_irq);
+    mem.map_memory(http_storage_addr, http_storage.ram_size(), http_storage);
+  
+    var fs_store = new KeyValueFS(Fetch);
+    var fs_storage_addr = 0xF000D000;
+    var fs_storage_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 12);
+    var fs_storage = new KeyStore(fs_store, mem, fs_storage_irq);
+    mem.map_memory(fs_storage_addr, fs_storage.ram_size(), fs_storage);
+  
+    vm.add_device(mem)
           .add_device(cpu)
           .add_device(devcon)
           .add_device(output)
           .add_device(input)
           .add_device(timer)
-          .add_device(rtc);
+          .add_device(rtc)
+          .add_device(http_storage)
+          .add_device(fs_storage);
 
     vm.info = {
         /*
@@ -83,6 +101,14 @@ function vm_init(ram_size)
         output: {
             addr: output_addr,
             irq: output_irq
+        },
+        http_storage: {
+          addr: http_storage_addr,
+          irq: http_storage_irq.toInt()
+        },
+        fs_storage: {
+          addr: fs_storage_addr,
+          irq: fs_storage_irq.toInt()
         }
     };
 
@@ -143,7 +169,7 @@ if(vm_debugging) {
     });
 }
 
-if(path != null && path != ':forth') {
+if(path != null && path != ':echo') {
     if(vm_debugging) console.log("Loading " + path);
 	  fs.readFile(path, function(err, data) {
 		    if(err) throw err;
@@ -155,14 +181,8 @@ if(path != null && path != ':forth') {
         main_loop(vm, steps, steps != null);
 	  });
 } else {
-    const Forth = require("vm/forth");
-
-    function forth_init(vm)
-    {
-        program_code = Forth.assemble(1024*1024, 0, vm.info);
-        vm.cpu.memwrite(0, program_code);
-    }
-
-	  forth_init(vm);
-    main_loop(vm, steps, steps != null);
+  const BootLoader = require('vm/boot_loader.js');
+  var boot_loader = BootLoader.assemble(1024*1024, 0, vm.info);
+  vm.cpu.memwrite(0, boot_loader);
+  main_loop(vm, steps, steps != null);
 }

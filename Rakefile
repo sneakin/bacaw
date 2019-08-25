@@ -7,6 +7,8 @@ buildroot ||= ENV.fetch('BUILDROOT', root.join('build'))
 
 $: << root.parent.join('lib')
 $: << root.join('vendor/rake-node/lib')
+$:.unshift(root.join('vendor/webrick/lib'))
+
 require 'rake/browserify'
 
 NODE_PATH << [ root.join('js', 'lib').to_s,
@@ -16,12 +18,16 @@ outputs = [ 'index.html',
             'index.css',
             'dev.html',
             'dev_style.css',
+            'sounds/startup.mp3',
+            'service_worker.js',
             'doc/index.html',
             'style.css',
             'tabs.css',
             'xterm.css',
             'images/unscii-8.png',
-            'images/unscii-16.png'
+            'images/unscii-16.png',
+            'test.html',
+            'test.js'
           ].collect do |src|
   buildroot.join(src)
 end
@@ -29,13 +35,15 @@ end
 directory buildroot
 directory buildroot.join('doc') => buildroot
 directory buildroot.join('images') => buildroot
+directory buildroot.join('sounds') => buildroot
 
 [ 'style.css',
   'tabs.css',
   'dev_style.css',
   'index.css',
   'images/unscii-8.png',
-  'images/unscii-16.png'
+  'images/unscii-16.png',
+  'sounds/startup.mp3',
 ].each do |name|
   output = buildroot.join(name)
   src = root.join('www', name)
@@ -50,20 +58,26 @@ file buildroot.join('xterm.css') => root.join('node_modules', 'xterm', 'dist', '
 end
 
 BrowserifyRunner.root = root
+BrowserifyRunner.bundle buildroot.join('ipfs.js') => [ root.join('www/ipfs.js') ]
 BrowserifyRunner.bundle buildroot.join('dev.js') => [ root.join('www/dev.js') ]
 BrowserifyRunner.bundle buildroot.join('doc/doc.js') => [ root.join('www/doc/doc.js') ]
+BrowserifyRunner.bundle buildroot.join('service_worker.js') => [ root.join('www/service_worker.js') ]
 
 html_file buildroot.join('index.html') => [ root.join('www/index.src.html'), buildroot ]
-html_file buildroot.join('dev.html') => [ root.join('www/dev.src.html'), buildroot.join('dev.js'), buildroot ]
+html_file buildroot.join('dev.html') => [ root.join('www/dev.src.html'), buildroot.join('dev.js'), buildroot.join('ipfs.js'), buildroot ]
 html_file buildroot.join('doc/index.html') => [ root.join('www/doc/index.src.html'), buildroot.join('doc/doc.js'), buildroot.join('doc') ]
+
+BrowserifyRunner.bundle buildroot.join('test.js') => [ root.join('www/test.js') ]
+html_file buildroot.join('test.html') => [ root.join('www/test.src.html'), buildroot.join('test.js'), buildroot.join('dev.js'), buildroot.join('ipfs.js'), buildroot ]
 
 desc 'Start a webserver on port 9090 to serve the build directory.'
 task :serve do
-	require 'webrick'
-  $stderr.puts("Serving on #{buildroot}")
-	s = WEBrick::HTTPServer.new(:Port => 9090, :DocumentRoot => buildroot)
-	trap('INT') { s.shutdown }
-	s.start
+  require 'rake-node/http/server'
+  RakeNode::HTTP.run(:Port => ENV.fetch('PORT', 9090).to_i,
+                      :DocumentRoot => buildroot,
+                     :SSLCertPrefix => root.join('server'),
+                     :Domain => ENV.fetch('DOMAIN', nil),
+                     :IP => ENV.fetch('IP', nil))
 end
 
 namespace :bacaw do

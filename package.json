@@ -1,14 +1,19 @@
 {
-   "name": "bacaw",
-   "version": "0.0.1",
-   "private": true,
-   "scripts": {
-      "start": "node ./bin/bccon.js"
-   },
-   "dependencies": {
-      "xterm": "~3.8.0",
-      "colors": "~1.3.2",
-      "brfs": "~2.0.1",
-      "browserify": "~16.2.3"
-   }
+  "name": "bacaw",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "node ./bin/bccon.js"
+  },
+  "dependencies": {
+    "brfs": "~2.0.1",
+    "browserify": "~16.2.3",
+    "colors": "~1.3.2",
+    "hammerjs": "~2.0.8",
+    "ipfs": "~0.35.0",
+    "muuri": "~0.7.1",
+    "node-fetch": "~2.6.0",
+    "tinyify": "^2.5.1",
+    "xterm": "~3.8.0"
+  }
 }

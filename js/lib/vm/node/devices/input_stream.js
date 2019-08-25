@@ -7,12 +7,11 @@ require('vm/types.js');
 
 const TextEncoder = require('util/text_encoder');
 
-function InputStream(stream, mem_size, vm, irq)
+function InputStream(stream, mem_size, irq)
 {
   mem_size = mem_size || 1024;
 
   this.name = "InputStream";
-  this.vm = vm;
   this.stream = stream;
   this.irq = irq;
   
@@ -48,9 +47,7 @@ function InputStream(stream, mem_size, vm, irq)
 
 InputStream.prototype.trigger_interrupt = function()
 {
-  if(this.irq) {
-    this.vm.interrupt(this.irq);
-  }
+  this.irq.trigger();
 }
 
 InputStream.prototype.encode = function(data)
@@ -119,25 +116,12 @@ InputStream.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
-InputStream.prototype.read1 = function(addr, type)
-{
-    return this.ram.read1(addr, type);
-}
-
 InputStream.prototype.write = function(addr, data)
 {
   this.ram.write(addr, data);
   if(addr == this.data.ds.fields['ready'].offset && this.data.ready == 0) {
     this.stream.resume();
   }
-}
-
-InputStream.prototype.write1 = function(addr, value, type)
-{
-    this.ram.write1(addr, value, type);
-    if(addr == this.data.ds.fields['ready'].offset && this.data.ready == 0) {
-      this.stream.resume();
-    }
 }
 
 InputStream.prototype.step = function()

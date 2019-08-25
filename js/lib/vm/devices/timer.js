@@ -3,10 +3,9 @@ const DataStruct = require('data_struct.js');
 const VMJS = require('vm.js');
 const RAM = require('vm/devices/ram.js');
 
-function Timer(vm, irq, frequency)
+function Timer(irq, frequency)
 {
   this.name = "Timer";
-    this.vm = vm;
     this.irq = irq;
     this.frequency = frequency;
     if(this.frequency == null) this.frequency = 1<<20;
@@ -56,21 +55,9 @@ Timer.prototype.read = function(addr, count, output, offset)
     return this.ram.read(addr, count, output, offset);
 }
 
-Timer.prototype.read1 = function(addr, type)
-{
-    return this.ram.read1(addr, type);
-}
-
 Timer.prototype.write = function(addr, data)
 {
     var n = this.ram.write(addr, data);
-    this.step();
-    return n;
-}
-
-Timer.prototype.write1 = function(addr, value, type)
-{
-    var n = this.ram.write1(addr, value, data);
     this.step();
     return n;
 }
@@ -153,7 +140,7 @@ Timer.prototype.tick = function(timer)
         //console.log("Ticking " + timer);
         this.data.timers[timer].counter += 1;
         this.data.last_timer = timer;
-        this.vm.interrupt(this.irq);
+        this.irq.trigger();
     }
 }
 

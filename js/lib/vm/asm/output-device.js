@@ -39,7 +39,6 @@ function output_asm(asm, output_dev_irq, output_dev_addr)
       label('wait_for_output_sleep').
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(1).
       store(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.DS).uint32('waiting_for_output').
-      sie().
       sleep().
       call(0, VM.CPU.REGISTERS.CS).uint32('reset_output').
       load(VM.CPU.REGISTERS.R0, 0, VM.CPU.REGISTERS.INS).uint32(0).

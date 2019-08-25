@@ -27,6 +27,7 @@ if(typeof(performance) != 'undefined') {
 
 function RTC()
 {
+    this.name = 'RTC';
     this.input_ram = new RAM(RTC.InputMemory.byte_size);
     this.input_data = RTC.InputMemory.proxy(this.input_ram.data_view());
     this.input_data.on_time = start_time();
@@ -45,10 +46,10 @@ RTC.prototype.ram_size = function()
     return this.input_ram.length;
 }
 
-RTC.prototype.read1 = function(addr, type)
+RTC.prototype.read = function(addr, count, output, offset)
 {
     this.update();
-    return this.input_ram.read1(addr, type);
+    return this.input_ram.read(addr, count, output, offset);
 }
 
 RTC.prototype.update = function()

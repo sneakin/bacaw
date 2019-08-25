@@ -86,9 +86,9 @@ MemoryDisplay.prototype.update_data = function()
 MemoryDisplay.prototype.memread = function(addr)
 {
     try {
-        return this.vm.mmu.memread(addr, this.row_size);
+        return this.vm.mem.memread(addr, this.row_size);
     } catch(e) {
-        if(e instanceof VM.MMU.NotMappedError) {
+        if(e instanceof VM.MemoryBus.NotMappedError) {
             return this.zeros;
         } else {
             throw(e);

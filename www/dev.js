@@ -10,10 +10,10 @@ const DeviceList = require('dev/device_list');
 const DevConDisplay = require('dev/dev_con_display');
 const Tabber = require('tabber');
 const FS = require('fs');
+const Terminal = require('vm/devices/terminal');
+const VMWorker = require('vm/service_worker');
 
 const LOAD_OFFSET = 0;
-
-const Terminal = require('vm/devices/terminal');
 
 function AssemblyEditor(vm)
 {
@@ -62,6 +62,14 @@ function dev_init()
         }
     });
 
+  var worker = null;
+  VMWorker.register('service_worker.js', window.location).then((reg) => {
+    worker = reg;
+    console.log("ServiceWorker register", reg);
+  }).catch((error) => {
+    console.log("ServiceWorker failed to register", error);
+  });
+  
     // Hook the widgets' elements
     var register_table = new RegisterTable(document.getElementById('registers'));
     var stack_display = new StackDisplay(document.getElementById('stack'), 128);
@@ -169,10 +177,10 @@ function dev_init()
         fontFamily: 'Inconsolata',
         fontSize: 16
     });
-  var input_irq = VM.CPU.INTERRUPTS.user + 4;
+  var input_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 4);
   var input_addr = 0xF0004000;
-  var input_term = term.get_input_device(1024, vm, input_irq);
-  vm.mmu.map_memory(input_addr, input_term.ram_size(), input_term);
+  var input_term = term.get_input_device(1024, input_irq);
+  vm.mem.map_memory(input_addr, input_term.ram_size(), input_term);
   vm.add_device(input_term);
 
   vm.info.input = {
@@ -180,10 +188,10 @@ function dev_init()
     irq: input_irq
   };
 
-  var output_irq = VM.CPU.INTERRUPTS.user + 3;
+  var output_irq = vm.interrupt_handle(VM.CPU.INTERRUPTS.user + 3);
   var output_addr = 0xF0003000;
-  var output_term = term.get_output_device(1024, vm, output_irq);
-  vm.mmu.map_memory(output_addr, output_term.ram_size(), output_term);
+  var output_term = term.get_output_device(1024, output_irq);
+  vm.mem.map_memory(output_addr, output_term.ram_size(), output_term);
   vm.add_device(output_term);
   vm.info.output = {
     addr: output_addr,
@@ -192,7 +200,6 @@ function dev_init()
 
   var boot_loader = BootLoader.assemble(1024*1024, 0, vm.info);
   vm.cpu.memwrite(0, boot_loader);
-    
 }
 
 if(typeof(window) != 'undefined') {
