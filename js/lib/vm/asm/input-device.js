@@ -4,7 +4,7 @@ const asm_isr = require('vm/asm/isr');
 function input_asm(asm, input_dev_irq, input_dev_addr)
 {
   var input_dev_length = 0;
-  var input_dev_buffer = 8;
+  var input_dev_buffer = 12;
 
   asm.label('on_input').
       push(VM.CPU.REGISTERS.R0).

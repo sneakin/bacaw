@@ -35,13 +35,17 @@ Terminal.prototype.on_terminal = function(event, fn)
 Terminal.prototype.push_byte = function(data)
 {
   if(this.debug) console.log("Terminal push", data, data.charCodeAt(0));
-  if(data == "\x7F" || data == "\x08") {
+  // backspace deletes a byte
+  if(this.local_echo &&
+     !this.isRaw &&
+     (data == "\x7F" || data == "\x08")) {
     this.buffer = this.buffer.slice(0, this.buffer.length - 1);
   } else {
     this.buffer += data;
   }
   
   if(this.local_echo) {
+    // echo an over writing space on backspace
     if(data == "\x7F" || data == "\x08") {
       data = "\x08 \x08";
     }
@@ -77,11 +81,12 @@ Terminal.Readable = function(terminal)
     this.terminal = terminal;
     this.encoder = new TextEncoder();
     this.callbacks = [];
-
+  this.isRaw = false;
+  
     var self = this;
 
   this.terminal.on_terminal('data', function(c) {
-    if(c.charCodeAt(0) < 32) {
+    if(self.isRaw || c.charCodeAt(0) < 32) {
       self.on_data();
     }
   });
@@ -97,6 +102,12 @@ Terminal.Readable.prototype.resume = function()
 {
   this.is_paused = false;
   return this;
+}
+
+Terminal.Readable.prototype.setRawMode = function(yes)
+{
+  this.isRaw = yes;
+  this.terminal.local_echo = !yes; // todo write control chars?
 }
 
 Terminal.Readable.prototype.on = function(event, fn)

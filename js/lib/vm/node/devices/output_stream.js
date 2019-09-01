@@ -14,7 +14,6 @@ function OutputStream(stream, mem_size, irq)
   this.name = "OutputStream";
   this.stream = stream;
   this.irq = irq;
-  
   this.data_struct = new DataStruct([
     [ 'eos', VM.TYPES.ULONG ],
     [ 'cmd', VM.TYPES.ULONG ],
