@@ -17,17 +17,23 @@ function pathjoin(base, name)
 Worker.register = function(script, location)
 {
   var root = dirname(location.pathname);
-  
-  return navigator.serviceWorker.register(pathjoin(root, script), {
-    scope: root + "/"
-  }).then((reg) => {
-    console.log("Worker registered");
-    this.registration = reg;
-  }).catch((error) => {
-    console.log("Worker register error", error);
-    this.error = error;
-    this.registration = null;
-  });
+
+  if(navigator['serviceWorker'] === undefined) {
+    return new Promise((accept, reject) => {
+      throw "ServiceWorker unsupported.";
+    });
+  } else {  
+    return navigator.serviceWorker.register(pathjoin(root, script), {
+      scope: root + "/"
+    }).then((reg) => {
+      console.log("Worker registered");
+      this.registration = reg;
+    }).catch((error) => {
+      console.log("Worker register error", error);
+      this.error = error;
+      this.registration = null;
+    });
+  }
 }
 
 if(typeof(module) != 'undefined') {
