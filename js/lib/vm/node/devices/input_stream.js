@@ -27,18 +27,23 @@ function InputStream(stream, mem_size, irq)
   this.reset();
 
   if(this.stream) {
-    //this.stream.pause();
+    this.stream.pause();
 
     var self = this;
-    this.stream.on('close', function() {
+    var on_close = function() {
       self.data.eos = 1;
       if(self.interrupt_on_events()) self.trigger_interrupt();
-    });
+    };
+    this.stream.on('close', on_close);
+    this.stream.on('end', on_close);
   
+    /*
     this.stream.on('readable', function() {
       self.data.eos = 0;
       if(self.interrupt_on_events()) self.trigger_interrupt();
+      //self.read_more(self.stream.read(mem_size));
     });
+    */
 
     this.stream.on('data', function(data) {
       self.read_more(data);
