@@ -10,16 +10,19 @@ if(typeof(performance) != 'undefined') {
     now = function() {
         return performance.now();
     }
-
-    start_time = function() {
-        return performance.timing.navigationStart;;
-    }
 } else {
     now = function() {
         return Date.now();
     }
+}
 
-    var start = now();
+
+if(typeof(performance.timing) != 'undefined') {
+    start_time = function() {
+        return performance.timing.navigationStart;
+    }
+} else {
+     var start = now();
     start_time = function() {
         return start;
     }
